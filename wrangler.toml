@@ -17,7 +17,7 @@ crons = ["* * * * *", "0 3 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "chatmany"
-database_id = "REPLACE-WITH-THE-ID-FROM-wrangler-d1-create"
+database_id = "682c90a5-cb4f-446a-ae1c-a48f02b737a5"
 migrations_dir = "schema"
 
 # Web UI (Section 7A). Static files in ./public are served automatically; the Worker handles
@@ -36,4 +36,4 @@ MODE = "polling"
 POLL_INTERVAL_SECONDS = "90"
 # Redirect URI registered in your Meta app. Must match exactly: https://<your-worker>/auth/callback
 # You MUST change this before deploying — the placeholder is not a working URL.
-REDIRECT_URI = "https://REPLACE-WITH-YOUR-WORKER-URL.workers.dev/auth/callback"
+REDIRECT_URI = "https://chatmany.blueturboguy07.workers.dev/auth/callback"

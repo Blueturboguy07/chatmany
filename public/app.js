@@ -195,6 +195,23 @@ function connectBanner() {
   return `<div class="banner">${msg} <a href="/auth/authorize">Connect Instagram</a></div>`;
 }
 
+/**
+ * Hard gate for automation pages: until an Instagram account is connected there is nothing a
+ * campaign could run against, so the list/builder are replaced by a connect prompt instead of
+ * rendering dead controls. An expired token does NOT gate (the connector exists — the banner
+ * already prompts a reconnect and history stays browsable).
+ */
+function renderConnectGate(view, what) {
+  view.innerHTML = `
+    <div class="gate-wrap"><div class="gate-card">
+      <div class="gate-icon">${ICON.send}</div>
+      <h2>Connect Instagram first</h2>
+      <p>${esc(what)} need a connected Instagram Professional account — there's nothing for an automation to watch or send until one is linked.</p>
+      <a class="btn primary" href="/auth/authorize">Connect Instagram</a>
+      <p class="gate-hint">You'll approve access on Instagram's own page. chatmany never sees your password.</p>
+    </div></div>`;
+}
+
 function route() {
   const view = $("#view");
   view.innerHTML = `<div class="empty">Loading…</div>`;
@@ -267,6 +284,7 @@ async function archiveCampaigns(ids, archived) {
 /* ================= AUTOMATIONS (list) ================= */
 async function renderAutomations() {
   const view = $("#view");
+  if (!(store.status || {}).connected) return renderConnectGate(view, "Automations");
   try {
     store.campaigns = (await api("/api/campaigns")).campaigns || [];
   } catch (e) {
@@ -547,6 +565,7 @@ function draftFromCampaign(c) {
 
 async function renderCreate() {
   const view = $("#view");
+  if (!(store.status || {}).connected) return renderConnectGate(view, "The automation builder and its media picker");
   if (!store.draft) {
     store.draft = defaultDraft();
     markSaved();
