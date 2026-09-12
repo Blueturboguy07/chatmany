@@ -2,7 +2,7 @@
 // or imported from config.json. Both funnel through validateCampaign so the engine can trust
 // the shape. Validation fails loudly on missing media_id / keywords.
 
-import type { AppConfig, Campaign } from "./types";
+import type { AppConfig, Campaign, Platform } from "./types";
 
 export class ConfigError extends Error {}
 
@@ -21,6 +21,10 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
   if (!isNonEmptyString(c.campaign_id)) {
     throw new ConfigError(`${where}.campaign_id is required`);
   }
+  if (c.platform !== undefined && c.platform !== "instagram" && c.platform !== "tiktok") {
+    throw new ConfigError(`${where}.platform must be "instagram" or "tiktok"`);
+  }
+  const platform: Platform = c.platform === "tiktok" ? "tiktok" : "instagram";
   if (!isNonEmptyString(c.media_id)) {
     throw new ConfigError(`${where}.media_id is required`);
   }
@@ -45,6 +49,17 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
     throw new ConfigError(`${where}.copy.opening and copy.delivery are required`);
   }
 
+  // Direct delivery replies to the comment with the reward itself, so there is no tap to hang a
+  // follow gate or an email ask on. Reject the combination rather than silently dropping a step.
+  if (c.deliver_in_opening !== undefined && typeof c.deliver_in_opening !== "boolean") {
+    throw new ConfigError(`${where}.deliver_in_opening must be a boolean`);
+  }
+  if (c.deliver_in_opening && (c.check_follow || c.ask_email)) {
+    throw new ConfigError(
+      `${where}.deliver_in_opening cannot be combined with check_follow or ask_email — both need the tap flow`,
+    );
+  }
+
   if (c.public_reply !== undefined) {
     const pr = c.public_reply as Record<string, unknown>;
     if (typeof pr.enabled !== "boolean") {
@@ -58,6 +73,7 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
   // Reflect only known fields; ignore extras so the schema can evolve.
   return {
     campaign_id: c.campaign_id,
+    platform,
     name: typeof c.name === "string" ? c.name : undefined,
     media_id: c.media_id,
     keywords: c.keywords as string[],
@@ -67,6 +83,7 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
     check_follow: Boolean(c.check_follow),
     verify_follow_count: Boolean(c.verify_follow_count),
     ask_email: Boolean(c.ask_email),
+    deliver_in_opening: Boolean(c.deliver_in_opening),
     reward: { type: reward.type as Campaign["reward"]["type"], value: reward.value as string },
     copy: copy as unknown as Campaign["copy"],
   };

@@ -415,3 +415,149 @@ describe("duplicate sends when a delivered message reports failure", () => {
     expect(client.calls.quick).toHaveLength(afterFirst);
   });
 });
+
+describe("direct delivery (deliver_in_opening): the reward is the private reply", () => {
+  const direct = (over: Partial<Campaign> = {}) =>
+    campaign({
+      deliver_in_opening: true,
+      reward: { type: "link", value: "https://publikhq.com/astro" },
+      copy: { ...campaign().copy, delivery: "{reward}" },
+      ...over,
+    });
+
+  it("sends ONE plain-text message containing the reward, with no button to tap", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct(), true);
+
+    await engine.handleComment(comment());
+
+    expect(client.calls.privateReplyText).toHaveLength(1);
+    expect(client.calls.privateReplyText[0]).toMatchObject({
+      commentId: "cm1",
+      text: "https://publikhq.com/astro",
+    });
+    // The button-template opening is never used in this mode.
+    expect(client.calls.privateReply).toHaveLength(0);
+    expect(client.calls.text).toHaveLength(0);
+  });
+
+  it("substitutes {reward} inside surrounding copy", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct({ copy: { ...campaign().copy, delivery: "here u go {reward}" } }), true);
+
+    await engine.handleComment(comment());
+
+    expect(client.calls.privateReplyText[0]).toMatchObject({
+      text: "here u go https://publikhq.com/astro",
+    });
+  });
+
+  it("completes the funnel immediately: conversation DONE, delivered logged", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct(), true);
+
+    await engine.handleComment(comment());
+
+    expect((await getConversation(db, "user1", "c1"))?.state).toBe("DONE");
+    const counts = await eventCountsByType(db, "c1", 0);
+    expect(counts.comment_matched).toBe(1);
+    expect(counts.opening_sent).toBe(1);
+    expect(counts.delivered).toBe(1);
+  });
+
+  it("sends once per person even if they comment again", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct(), true);
+
+    await engine.handleComment(comment());
+    await engine.handleComment(comment({ comment_id: "cm2" }));
+
+    expect(client.calls.privateReplyText).toHaveLength(1);
+  });
+
+  it("a later inbound message does not trigger a second delivery", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct(), true);
+    await engine.handleComment(comment());
+
+    await engine.handleMessage(message({ timestamp: T + 10 }));
+
+    expect(client.calls.privateReplyText).toHaveLength(1);
+    expect(client.calls.text).toHaveLength(0);
+  });
+
+  it("retries a genuine 4xx refusal on the next poll", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, direct(), true);
+
+    client.failNext.privateReplyText = 1;
+    await engine.handleComment(comment());
+    expect(client.calls.privateReplyText).toHaveLength(0); // nothing went out
+
+    await engine.handleComment(comment()); // same comment, next poll
+    expect(client.calls.privateReplyText).toHaveLength(1);
+  });
+});
+
+describe("a 5xx from Instagram is never treated as proof the message was refused", () => {
+  // The 2026-08-23 incident: Instagram answered HTTP 500 / code 1 for private replies it had
+  // actually delivered, so every poll re-sent the same opening — 26 duplicate DMs to one person.
+  it("does not re-send an opening that 5xx'd after delivering, across many polls", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, campaign(), true);
+
+    client.deliverThenFail5xxNext.privateReply = 1;
+    await engine.handleComment(comment());
+    expect(client.calls.privateReply).toHaveLength(1); // it did reach the person
+
+    for (let poll = 0; poll < 25; poll++) await engine.handleComment(comment());
+
+    expect(client.calls.privateReply).toHaveLength(1);
+  });
+
+  it("does not re-send a direct delivery that 5xx'd after delivering", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(
+      db,
+      campaign({ deliver_in_opening: true, copy: { ...campaign().copy, delivery: "{reward}" } }),
+      true,
+    );
+
+    client.deliverThenFail5xxNext.privateReplyText = 1;
+    await engine.handleComment(comment());
+    for (let poll = 0; poll < 25; poll++) await engine.handleComment(comment());
+
+    expect(client.calls.privateReplyText).toHaveLength(1);
+  });
+
+  it("still retries a rate-limit refusal, which really did send nothing", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, campaign(), true);
+
+    // 429 => isRateLimit => a refusal: nothing was delivered, so the next poll must try again.
+    client.rateLimitNext.privateReply = 1;
+    await engine.handleComment(comment());
+    expect(client.calls.privateReply).toHaveLength(0);
+
+    await engine.handleComment(comment());
+    expect(client.calls.privateReply).toHaveLength(1);
+  });
+});

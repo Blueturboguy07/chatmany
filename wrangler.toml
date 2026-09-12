@@ -37,3 +37,11 @@ POLL_INTERVAL_SECONDS = "90"
 # Redirect URI registered in your Meta app. Must match exactly: https://<your-worker>/auth/callback
 # You MUST change this before deploying — the placeholder is not a working URL.
 REDIRECT_URI = "https://chatmany.blueturboguy07.workers.dev/auth/callback"
+
+# ---- TikTok (optional) ----
+# Redirect URL registered on the TikTok developer app as "TikTok account holder redirect URL".
+# Must match exactly: https://<your-worker>/auth/tiktok/callback
+TIKTOK_REDIRECT_URI = "https://chatmany.blueturboguy07.workers.dev/auth/tiktok/callback"
+# "webhook" (default): TikTok pushes comments + DMs to /webhook/tiktok (subscribe via POST /admin/tiktok/webhooks).
+# "polling": the minute cron reads comments on campaign videos and recent conversations instead.
+TIKTOK_MODE = "webhook"

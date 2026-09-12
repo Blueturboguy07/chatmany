@@ -13,6 +13,17 @@ import { handleConfigExport, handleConfigImport } from "./routes/config";
 import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
 import { handleApi } from "./routes/api";
 import { isOwner, json } from "./routes/http";
+import {
+  handleTikTokAuthorize,
+  handleTikTokCallback,
+  handleTikTokDisconnect,
+  handleTikTokStatus,
+  handleTikTokWebhookAdmin,
+} from "./routes/tiktokAuth";
+import { handleTikTokWebhookEvent, handleTikTokWebhookVerify } from "./routes/tiktokWebhook";
+import { refreshTikTokTokenIfDue } from "./auth/tiktokRefresh";
+import { buildTikTokRuntime } from "./tiktokRuntime";
+import { pollTikTokComments, pollTikTokMessages } from "./poller/tiktokPoll";
 
 const POLL_CRON = "* * * * *";
 const REFRESH_CRON = "0 3 * * *";
@@ -34,6 +45,12 @@ export default {
     if (pathname === "/webhook" && method === "GET") return handleWebhookVerify(env, url);
     if (pathname === "/webhook" && method === "POST") return handleWebhookEvent(env, req);
 
+    // TikTok: OAuth onboarding + signed webhook deliveries (comments and DMs are pushed here).
+    if (pathname === "/auth/tiktok/authorize" && method === "GET") return handleTikTokAuthorize(env, url);
+    if (pathname === "/auth/tiktok/callback" && method === "GET") return handleTikTokCallback(env, url);
+    if (pathname === "/webhook/tiktok" && method === "GET") return handleTikTokWebhookVerify(url);
+    if (pathname === "/webhook/tiktok" && method === "POST") return handleTikTokWebhookEvent(env, req);
+
     // --- owner-only API + admin routes ---
     if (pathname.startsWith("/api/")) {
       if (!isOwner(req, url, env)) return json({ error: "unauthorized" }, 401);
@@ -45,6 +62,10 @@ export default {
       "/config/import",
       "/config/export",
       "/admin/poll",
+      "/auth/tiktok/status",
+      "/auth/tiktok/disconnect",
+      "/admin/tiktok/webhooks",
+      "/admin/tiktok/poll",
     ]);
     if (ownerRoutes.has(pathname)) {
       if (!isOwner(req, url, env)) return json({ error: "unauthorized" }, 401);
@@ -56,6 +77,14 @@ export default {
       if (pathname === "/admin/poll" && method === "POST") {
         await runPoll(env);
         return json({ ok: true, ran: "poll" });
+      }
+      if (pathname === "/auth/tiktok/status" && method === "GET") return handleTikTokStatus(env);
+      if (pathname === "/auth/tiktok/disconnect" && method === "POST") return handleTikTokDisconnect(env);
+      if (pathname === "/admin/tiktok/webhooks") return handleTikTokWebhookAdmin(env, req, url);
+      // Manual TikTok poll (comments + conversations) — the fallback transport, and a test hook.
+      if (pathname === "/admin/tiktok/poll" && method === "POST") {
+        const ran = await runTikTokPoll(env);
+        return json({ ok: true, ran: ran ? "tiktok-poll" : "skipped (no TikTok account connected)" });
       }
       return json({ error: "method not allowed" }, 405);
     }
@@ -78,12 +107,28 @@ export default {
       return;
     }
     if (event.cron === POLL_CRON) {
-      // In webhook mode, push replaces polling; skip the comment/message polls.
+      // TikTok's access token lives one day: check every tick, refresh when within 2h of expiry.
+      const tt = await refreshTikTokTokenIfDue(env);
+      if (tt.status === "refreshed" || tt.status === "error" || tt.status === "expired") {
+        console.log(`[chatmany:tiktok] token refresh: ${tt.status}${tt.detail ? ` (${tt.detail})` : ""}`);
+      }
+      if (env.TIKTOK_MODE === "polling") await runTikTokPoll(env);
+
+      // In webhook mode, push replaces polling; skip the Instagram comment/message polls.
       if (env.MODE === "webhook") return;
       await runPoll(env);
     }
   },
 } satisfies ExportedHandler<Env>;
+
+/** TikTok polling fallback: comments on campaign videos + conversations that changed. */
+async function runTikTokPoll(env: Env): Promise<boolean> {
+  const rt = await buildTikTokRuntime(env);
+  if (!rt) return false;
+  await pollTikTokComments(rt, env.DB);
+  await pollTikTokMessages(rt, env.DB);
+  return true;
+}
 
 /**
  * Run comment + message polls, honoring the configured poll interval (>= cron granularity).

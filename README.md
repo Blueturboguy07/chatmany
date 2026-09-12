@@ -6,7 +6,7 @@ You clone this repo, create your own Meta app, connect your own Instagram accoun
 
 > **Status:** feature-complete for single-creator use — the automation engine (OAuth, polling, token refresh, rate limiting, analytics events) **plus a ManyChat-style web UI** to build and monitor campaigns without editing JSON.
 
-> 🎬 **TikTok support is coming soon.** Same comment→DM funnel, same self-hosted setup. Star the repo to get notified.
+> 🎬 **TikTok is supported too** — same self-hosted setup, one extra tap for the viewer. See [TikTok](#tiktok) below for what TikTok's API allows and how to set it up.
 
 > 💬 **Stuck? DM me** [@build.ryanip](https://instagram.com/build.ryanip) on Instagram and I'll help you get it running. Bug reports and feature ideas are welcome in [Issues](https://github.com/ryanlaiyanip-ctrl/chatmany/issues).
 
@@ -646,9 +646,55 @@ Found a bug or want a feature? Open an [issue](https://github.com/ryanlaiyanip-c
 
 ## Roadmap
 
-- **TikTok support** — coming soon. Same comment→DM funnel, self-hosted the same way.
+- **TikTok support** — shipped. See [TikTok](#tiktok).
 - **"Any post" trigger** — watch every post automatically instead of picking one.
 
 ## License
 
 MIT. Built clean-room from official Meta API documentation.
+
+---
+
+## TikTok
+
+chatmany runs the same keyword funnel on TikTok, using only TikTok's official **Accounts API** (comments on your own videos) and **Business Messaging API** (direct messages). One thing is different, and it is a platform rule, not a chatmany limitation: **TikTok's API cannot open a DM with someone just because they commented.** A Business Account may only send messages into a conversation the viewer started (TikTok's own "Comment-to-Message" is a high-intent classifier limited to Business Accounts registered in Vietnam, Indonesia and Thailand). So the TikTok funnel is:
+
+1. Viewer comments **SURF** on your video.
+2. chatmany replies **publicly under the comment**: "DM me \"SURF\" and I'll send you the link 📩" (links aren't clickable in TikTok comments, so the reply says what to send).
+3. Viewer DMs you **SURF** (or anything, if it's their only pending funnel).
+4. chatmany answers in that chat: optional follow gate (TikTok reports whether they follow — followers skip it, others get a button card), optional email ask, then the link.
+
+Anyone who DMs the keyword without commenting gets the link too, and someone already served who asks again gets it again. Everything else — dashboard, contacts, archive, the rate-limit/idempotency ledgers — is shared with Instagram.
+
+### What TikTok requires before any of this works
+
+| Requirement | Where |
+|---|---|
+| A **TikTok Business Account** (personal/creator accounts can't authorize Business Messaging), with DMs set to accept messages from everyone | TikTok app → Settings → Account → Switch to Business Account |
+| A **TikTok for Business developer registration** — company only (company-domain email + a real company website; TikTok explicitly does not onboard individual developers) | https://business-api.tiktok.com/portal |
+| A **developer app** with the permissions **TikTok Accounts → Business Comment** (scope `comment.list`, `comment.list.manage`) and **Business Messaging** (`message.list.read/send/manage`), plus `user.info.basic`, `video.list`; its **TikTok account holder redirect URL** = `https://<your-worker>/auth/tiktok/callback` | Developer portal → My Apps |
+| The **Accounts API Access Application Form** (required since March 20, 2026 for any app requesting the TikTok Accounts scope) | Linked from the Accounts API docs |
+| **Business Messaging access**: the Data Security & Privacy review questionnaire, and for **US-registered** Business Accounts the additional US data-security review + USDS Addendum. EEA/UK/Switzerland accounts get no messaging API at all. | Business Messaging → Access guide (intake form) |
+
+Until the messaging review clears, the comment half works on its own (public replies), and the DM half returns TikTok error 40001/40064 — visible in `wrangler tail`.
+
+### Setup
+
+1. Add the two secrets and one var:
+   ```bash
+   # TIKTOK_APP_ID / TIKTOK_APP_SECRET from My Apps → App Detail → Basic Information
+   npx wrangler secret bulk tiktok-secrets.json   # {"TIKTOK_APP_ID":"…","TIKTOK_APP_SECRET":"…"}
+   ```
+   and set `TIKTOK_REDIRECT_URI` in `wrangler.toml` to `https://<your-worker>/auth/tiktok/callback`, then `npm run deploy`.
+2. Open `https://<your-worker>/auth/tiktok/authorize` and approve on TikTok's page. (`?force=1` re-shows the consent screen for an account that already authorized.)
+3. Subscribe the webhooks once (app-level; covers every account that authorizes the app):
+   ```bash
+   curl -X POST -H "authorization: Bearer $OWNER_TOKEN" https://<your-worker>/admin/tiktok/webhooks
+   curl -H "authorization: Bearer $OWNER_TOKEN" https://<your-worker>/admin/tiktok/webhooks   # read back
+   ```
+   TikTok then POSTs `comment.update` (within 5 minutes of a comment) and `im_receive_msg` (DMs) to `/webhook/tiktok`, signed with your app secret (`Tiktok-Signature: t=…,s=…`, HMAC-SHA256 over `t.body`).
+4. In the web UI, pick **TikTok** at the top of section 1, choose the video, set keywords, edit the public reply in section 3, and Go live.
+
+`TIKTOK_MODE = "polling"` in `wrangler.toml` makes the minute cron read comments on campaign videos and recent conversations instead of relying on webhooks (also how EU senders, whose webhook payload is stripped, get served). `POST /admin/tiktok/poll` runs one such pass on demand.
+
+**Limits worth knowing** (TikTok docs): 10 messages per 48-hour window after the viewer's message; comment replies ≤150 characters; Q&A card titles ≤40 and button labels ≤20 characters; 40 requests/minute per Accounts API endpoint; access token valid 1 day (refreshed automatically by the minute cron), refresh token 1 year.

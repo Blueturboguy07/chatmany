@@ -20,6 +20,17 @@
         "email_ask": "Want it in your inbox too? Tap your email or reply with it.",
         "delivery": "Here you go 🎉 {reward}"
       }
+    },
+    {
+      "campaign_id": "just-the-link",
+      "media_id": "17891234567891",
+      "keywords": ["ASTRO"],
+      "deliver_in_opening": true,
+      "reward": { "type": "link", "value": "https://example.com/astro" },
+      "copy": {
+        "opening": "(unused when deliver_in_opening is true)",
+        "delivery": "{reward}"
+      }
     }
   ]
 }

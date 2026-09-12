@@ -188,6 +188,18 @@ export class InstagramClient {
     return this.sendButtonTemplate({ commentId }, text, buttons);
   }
 
+  /**
+   * Private-reply to a comment with a plain text message — the whole funnel in one send, used
+   * when a campaign delivers the reward directly instead of gating it behind a button tap.
+   * Same 7-day / once-per-comment window as privateReplyWithButtons.
+   */
+  privateReplyText(commentId: string, text: string): Promise<{ message_id?: string }> {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { comment_id: commentId },
+      message: { text },
+    });
+  }
+
   // ---- public comment actions ----
 
   /** Post a public reply under a comment (text only; publishes asynchronously). */
@@ -205,7 +217,7 @@ export class InstagramClient {
   // ---- reads ----
 
   /** Read comments on a media object. Only called for media attached to an active campaign. */
-  async getComments(mediaId: string, limit = 50): Promise<IgComment[]> {
+  async getComments(mediaId: string, limit = 100): Promise<IgComment[]> {
     const res = await this.get<{ data?: IgComment[] }>(`/${mediaId}/comments`, {
       fields: "id,text,timestamp,username,from{id,username}",
       limit: String(limit),

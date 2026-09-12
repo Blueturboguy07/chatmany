@@ -15,6 +15,8 @@ import {
   upsertCampaign,
 } from "../db";
 import { buildRuntime } from "../runtime";
+import { buildTikTokRuntime } from "../tiktokRuntime";
+import { tikTokStatus } from "./tiktokAuth";
 import type { Env } from "../types";
 import { json } from "./http";
 
@@ -27,6 +29,10 @@ export async function handleApi(env: Env, req: Request, url: URL): Promise<Respo
 
   // Live account media for the builder picker + preview.
   if (path === "/api/media" && method === "GET") return mediaResponse(env);
+
+  // TikTok: connection status + the account's posts, in the same shape the picker already renders.
+  if (path === "/api/tiktok/status" && method === "GET") return json(await tikTokStatus(env));
+  if (path === "/api/tiktok/media" && method === "GET") return tiktokMediaResponse(env);
 
   // Campaigns.
   if (path === "/api/campaigns" && method === "GET") return campaignsList(env, url);
@@ -64,6 +70,30 @@ async function mediaResponse(env: Env): Promise<Response> {
   try {
     const media = await rt.client.getMedia(30);
     return json({ media });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+  }
+}
+
+async function tiktokMediaResponse(env: Env): Promise<Response> {
+  const rt = await buildTikTokRuntime(env);
+  if (!rt) return json({ error: "TikTok not connected" }, 400);
+  try {
+    const videos = await rt.client.listVideos(20);
+    return json({
+      media: videos.map((v) => ({
+        id: v.item_id,
+        media_type: v.media_type ?? "VIDEO",
+        caption: v.caption ?? "",
+        thumbnail_url: v.thumbnail_url ?? "",
+        media_url: v.thumbnail_url ?? "",
+        permalink: v.share_url ?? "",
+        timestamp: v.create_time ? new Date(Number(v.create_time) * 1000).toISOString() : undefined,
+        comments_count: v.comments,
+        like_count: v.likes,
+        views: v.video_views,
+      })),
+    });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 502);
   }

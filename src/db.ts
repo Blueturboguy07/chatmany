@@ -1,7 +1,7 @@
 // D1 data-access helpers. All timestamps are unix seconds. Kept intentionally thin so the
 // engine stays readable and cron ticks do minimal work (Workers free-tier 10ms CPU budget).
 
-import type { AuthRow, Campaign, EventType, State } from "./types";
+import type { AuthRow, Campaign, EventType, Platform, State, TikTokAuthRow } from "./types";
 import { validateCampaign } from "./config";
 
 export function now(): number {
@@ -17,9 +17,10 @@ export interface StoredCampaign {
 
 /** Active campaigns only (Section 10: poll only active campaigns to conserve rate budget). An
  * archived campaign is never polled even if its `active` flag is still on. */
-export async function getActiveCampaigns(db: D1Database): Promise<Campaign[]> {
+export async function getActiveCampaigns(db: D1Database, platform: Platform = "instagram"): Promise<Campaign[]> {
   const rows = await db
-    .prepare("SELECT config_json FROM campaigns WHERE active = 1 AND archived_at IS NULL")
+    .prepare("SELECT config_json FROM campaigns WHERE active = 1 AND archived_at IS NULL AND platform = ?")
+    .bind(platform)
     .all<{ config_json: string }>();
   const out: Campaign[] = [];
   for (const r of rows.results ?? []) {
@@ -114,14 +115,15 @@ export async function upsertCampaign(db: D1Database, campaign: Campaign, active 
   await db
     .prepare(
       `INSERT INTO campaigns (campaign_id, platform, media_id, config_json, active, updated_at)
-       VALUES (?, 'instagram', ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(campaign_id) DO UPDATE SET
+         platform = excluded.platform,
          media_id = excluded.media_id,
          config_json = excluded.config_json,
          active = excluded.active,
          updated_at = excluded.updated_at`,
     )
-    .bind(campaign.campaign_id, campaign.media_id, JSON.stringify(campaign), active ? 1 : 0, now())
+    .bind(campaign.campaign_id, campaign.platform ?? "instagram", campaign.media_id, JSON.stringify(campaign), active ? 1 : 0, now())
     .run();
 }
 
@@ -133,6 +135,45 @@ export async function isCommentProcessed(db: D1Database, commentId: string): Pro
     .bind(commentId)
     .first();
   return row !== null;
+}
+
+/**
+ * Which of these comment ids are already processed — ONE round trip per 100 instead of a
+ * `isCommentProcessed` call per comment. The poller reads up to 100 comments per media on every
+ * tick, and nearly all of them are already handled; doing that as N separate D1 queries burned
+ * enough CPU to get the whole scheduled invocation killed (`exceededCpu`), which silently left
+ * new commenters unserved. Keep this batched.
+ */
+export async function processedCommentIds(db: D1Database, commentIds: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  const CHUNK = 100;
+  for (let i = 0; i < commentIds.length; i += CHUNK) {
+    const chunk = commentIds.slice(i, i + CHUNK);
+    if (chunk.length === 0) continue;
+    const placeholders = chunk.map(() => "?").join(",");
+    const res = await db
+      .prepare(`SELECT comment_id FROM processed_comments WHERE comment_id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ comment_id: string }>();
+    for (const row of res.results ?? []) found.add(row.comment_id);
+  }
+  return found;
+}
+
+/** Log several events in one D1 batch (a new lead writes three of them). */
+export async function logEvents(
+  db: D1Database,
+  entries: { campaignId: string; type: EventType; igsid: string | null }[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  const ts = now();
+  await db.batch(
+    entries.map((e) =>
+      db
+        .prepare(`INSERT INTO events (campaign_id, igsid, type, created_at) VALUES (?, ?, ?, ?)`)
+        .bind(e.campaignId, e.igsid, e.type, ts),
+    ),
+  );
 }
 
 export async function markCommentProcessed(
@@ -199,6 +240,8 @@ export interface ConversationRow {
   follow_retries: number;
   updated_at: number;
   created_at: number;
+  /** TikTok only: the Business Messaging conversation to reply into (null until they DM us). */
+  conversation_id?: string | null;
 }
 
 export async function getConversation(
@@ -230,15 +273,16 @@ export async function createConversation(
   campaignId: string,
   username: string | null,
   state: State,
+  conversationId: string | null = null,
 ): Promise<void> {
   const ts = now();
   await db
     .prepare(
       `INSERT OR IGNORE INTO conversations
-         (igsid, campaign_id, state, username, followed, follow_retries, updated_at, created_at)
-       VALUES (?, ?, ?, ?, 0, 0, ?, ?)`,
+         (igsid, campaign_id, state, username, followed, follow_retries, updated_at, created_at, conversation_id)
+       VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)`,
     )
-    .bind(igsid, campaignId, state, username, ts, ts)
+    .bind(igsid, campaignId, state, username, ts, ts, conversationId)
     .run();
 }
 
@@ -246,13 +290,17 @@ export async function updateConversation(
   db: D1Database,
   igsid: string,
   campaignId: string,
-  patch: Partial<Pick<ConversationRow, "state" | "email" | "followed" | "follow_retries">>,
+  patch: Partial<Pick<ConversationRow, "state" | "email" | "followed" | "follow_retries" | "conversation_id">>,
 ): Promise<void> {
   const sets: string[] = [];
   const binds: unknown[] = [];
   if (patch.state !== undefined) {
     sets.push("state = ?");
     binds.push(patch.state);
+  }
+  if (patch.conversation_id !== undefined) {
+    sets.push("conversation_id = ?");
+    binds.push(patch.conversation_id);
   }
   if (patch.email !== undefined) {
     sets.push("email = ?");
@@ -413,6 +461,61 @@ export async function saveAuth(
 
 export async function clearAuth(db: D1Database): Promise<void> {
   await db.prepare("DELETE FROM auth WHERE id = 1").run();
+}
+
+// ---- TikTok auth (single row, separate table so the Instagram row is never touched) ----
+
+export async function getTikTokAuth(db: D1Database): Promise<TikTokAuthRow | null> {
+  return await db.prepare("SELECT * FROM tiktok_auth WHERE id = 1").first<TikTokAuthRow>();
+}
+
+export async function saveTikTokAuth(
+  db: D1Database,
+  fields: {
+    access_token: string;
+    refresh_token: string;
+    business_id: string;
+    expires_at: number;
+    refresh_expires_at: number;
+    scope?: string | null;
+    username?: string | null;
+    display_name?: string | null;
+    profile_image?: string | null;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO tiktok_auth (id, access_token, refresh_token, business_id, username, display_name, profile_image, scope, expires_at, refresh_expires_at, refreshed_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         access_token = excluded.access_token,
+         refresh_token = excluded.refresh_token,
+         business_id = excluded.business_id,
+         username = COALESCE(excluded.username, tiktok_auth.username),
+         display_name = COALESCE(excluded.display_name, tiktok_auth.display_name),
+         profile_image = COALESCE(excluded.profile_image, tiktok_auth.profile_image),
+         scope = COALESCE(excluded.scope, tiktok_auth.scope),
+         expires_at = excluded.expires_at,
+         refresh_expires_at = excluded.refresh_expires_at,
+         refreshed_at = excluded.refreshed_at`,
+    )
+    .bind(
+      fields.access_token,
+      fields.refresh_token,
+      fields.business_id,
+      fields.username ?? null,
+      fields.display_name ?? null,
+      fields.profile_image ?? null,
+      fields.scope ?? null,
+      fields.expires_at,
+      fields.refresh_expires_at,
+      now(),
+    )
+    .run();
+}
+
+export async function clearTikTokAuth(db: D1Database): Promise<void> {
+  await db.prepare("DELETE FROM tiktok_auth WHERE id = 1").run();
 }
 
 // ---- kv (small runtime state) ----

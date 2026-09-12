@@ -343,3 +343,8 @@ textarea { resize: vertical; min-height: 66px; }
 .gate-card p { color: var(--ink-soft); margin: 0 0 18px; }
 .gate-card .btn { display: inline-block; text-decoration: none; }
 .gate-hint { font-size: 12.5px; margin-top: 14px; margin-bottom: 0 !important; }
+
+/* ---- platforms (TikTok support) ---- */
+.platform-switch { display: flex; gap: 8px; margin: 6px 0 12px; }
+.platform-switch .btn[disabled] { opacity: .45; cursor: not-allowed; }
+.tag.tt { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #111; color: #fff; font-weight: 600; letter-spacing: .02em; }

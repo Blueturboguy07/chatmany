@@ -8,8 +8,12 @@ const GH_URL = "https://github.com/";
 const store = {
   token: localStorage.getItem(TOKEN_KEY) || "",
   status: null,
+  /** /api/tiktok/status — { connected, configured, username, profile_image, token_expired } */
+  tiktok: null,
   page: "automations",
   media: [],
+  /** TikTok posts, same shape as `media` (id, caption, thumbnail_url, permalink, comments_count). */
+  ttMedia: [],
   campaigns: [],
   automationStats: {}, // campaign_id -> { runs, ctr }
   draft: null,
@@ -99,7 +103,43 @@ async function boot() {
   } catch {
     return; // renderLogin already shown on 401
   }
+  await loadTikTokStatus();
   renderApp();
+}
+
+/* ---------------- platforms ---------------- */
+const igConnected = () => !!(store.status || {}).connected;
+const ttConnected = () => !!(store.tiktok || {}).connected;
+const anyConnected = () => igConnected() || ttConnected();
+const platformLabel = (p) => (p === "tiktok" ? "TikTok" : "Instagram");
+const mediaFor = (p) => (p === "tiktok" ? store.ttMedia : store.media);
+
+async function loadTikTokStatus() {
+  try {
+    store.tiktok = await api("/api/tiktok/status");
+  } catch {
+    store.tiktok = { connected: false };
+  }
+}
+
+/** Load a platform's posts once (thumbnails for the picker + list). Failures are non-fatal. */
+async function loadMedia(platform) {
+  try {
+    if (platform === "tiktok") {
+      if (store.ttMedia.length === 0 && ttConnected() && !store.tiktok.token_expired) {
+        store.ttMedia = (await api("/api/tiktok/media")).media || [];
+      }
+    } else if (store.media.length === 0 && igConnected() && !store.status.token_expired) {
+      store.media = (await api("/api/media")).media || [];
+    }
+  } catch {
+    // thumbnails are a nice-to-have
+  }
+}
+
+/** Thumbnail for a campaign's post on whichever platform it runs on. */
+function thumbFor(c) {
+  return (mediaFor(c.platform || "instagram").find((m) => m.id === c.media_id) || {}).thumbnail_url || "";
 }
 
 /* ---------------- login / connect ---------------- */
@@ -125,6 +165,7 @@ function renderLogin(err) {
     try {
       store.status = await api("/api/status");
       localStorage.setItem(TOKEN_KEY, val);
+      await loadTikTokStatus();
       renderApp();
     } catch {
       /* 401 handled */
@@ -155,9 +196,15 @@ function renderApp() {
         </nav>
         <div class="sidebar-footer">
           <div class="profile">
-            <img class="avatar" src="${s.profile_picture_url || ""}" alt="" onerror="this.style.visibility='hidden'"/>
+            <img class="avatar" src="${s.profile_picture_url || (store.tiktok || {}).profile_image || ""}" alt="" onerror="this.style.visibility='hidden'"/>
             <div class="who">
-              <div class="handle">${s.connected ? "@" + esc(s.username || "account") : "Not connected"}</div>
+              <div class="handle">${
+                s.connected
+                  ? "@" + esc(s.username || "account") + (ttConnected() ? " · TT @" + esc(store.tiktok.username || "tiktok") : "")
+                  : ttConnected()
+                    ? "TT @" + esc(store.tiktok.username || "tiktok")
+                    : "Not connected"
+              }</div>
               <span class="tag">self-hosted</span>
             </div>
           </div>
@@ -190,9 +237,24 @@ function paintNav() {
 
 function connectBanner() {
   const s = store.status || {};
-  if (s.connected && !s.token_expired) return "";
-  const msg = s.connected && s.token_expired ? "Your Instagram token expired — reconnect to resume." : "No Instagram account connected yet.";
-  return `<div class="banner">${msg} <a href="/auth/authorize">Connect Instagram</a></div>`;
+  const t = store.tiktok || {};
+  const parts = [];
+  if (s.connected && s.token_expired) parts.push(`Your Instagram token expired — <a href="/auth/authorize">reconnect Instagram</a>.`);
+  if (t.connected && t.token_expired) parts.push(`Your TikTok token expired — <a href="/auth/tiktok/authorize?force=1">reconnect TikTok</a>.`);
+  if (!s.connected && !t.connected) {
+    parts.push(
+      `No account connected yet. <a href="/auth/authorize">Connect Instagram</a>${t.configured ? ` or <a href="/auth/tiktok/authorize">Connect TikTok</a>` : ""}.`,
+    );
+  }
+  return parts.length ? `<div class="banner">${parts.join(" ")}</div>` : "";
+}
+
+function tiktokConnectLink() {
+  const t = store.tiktok || {};
+  if (t.connected) return "";
+  return t.configured
+    ? ` <a class="btn ghost" href="/auth/tiktok/authorize">Connect TikTok</a>`
+    : ` <span class="muted" title="Set TIKTOK_APP_ID / TIKTOK_APP_SECRET and TIKTOK_REDIRECT_URI on the Worker">TikTok not configured</span>`;
 }
 
 /**
@@ -205,10 +267,10 @@ function renderConnectGate(view, what) {
   view.innerHTML = `
     <div class="gate-wrap"><div class="gate-card">
       <div class="gate-icon">${ICON.send}</div>
-      <h2>Connect Instagram first</h2>
-      <p>${esc(what)} need a connected Instagram Professional account — there's nothing for an automation to watch or send until one is linked.</p>
-      <a class="btn primary" href="/auth/authorize">Connect Instagram</a>
-      <p class="gate-hint">You'll approve access on Instagram's own page. chatmany never sees your password.</p>
+      <h2>Connect an account first</h2>
+      <p>${esc(what)} need a connected Instagram Professional account or TikTok Business account — there's nothing for an automation to watch or send until one is linked.</p>
+      <a class="btn primary" href="/auth/authorize">Connect Instagram</a>${tiktokConnectLink()}
+      <p class="gate-hint">You'll approve access on the network's own page. chatmany never sees your password.</p>
     </div></div>`;
 }
 
@@ -284,21 +346,15 @@ async function archiveCampaigns(ids, archived) {
 /* ================= AUTOMATIONS (list) ================= */
 async function renderAutomations() {
   const view = $("#view");
-  if (!(store.status || {}).connected) return renderConnectGate(view, "Automations");
+  if (!anyConnected()) return renderConnectGate(view, "Automations");
   try {
     store.campaigns = (await api("/api/campaigns")).campaigns || [];
   } catch (e) {
     view.innerHTML = connectBanner() + `<div class="empty">${esc(e.message)}</div>`;
     return;
   }
-  try {
-    if (store.media.length === 0 && store.status.connected && !store.status.token_expired) {
-      const r = await api("/api/media");
-      store.media = r.media || [];
-    }
-  } catch {
-    // thumbnails are a nice-to-have; don't block the list on a media fetch failure
-  }
+  await loadMedia("instagram");
+  await loadMedia("tiktok");
 
   // Pull lightweight all-time stats (runs = opening_sent, ctr = clicks/opens) per campaign.
   const statsEntries = await Promise.all(
@@ -389,7 +445,7 @@ function paintAutoList() {
     el(`<div class="auto-list-head"><span></span><span>Name ▾</span><span>Runs</span><span>CTR</span><span>Modified ▾</span></div>`),
   );
   rows.forEach((c) => {
-    const thumb = (store.media.find((m) => m.id === c.media_id) || {}).thumbnail_url || "";
+    const thumb = thumbFor(c);
     const stats = store.automationStats[c.campaign_id] || { runs: 0, ctr: 0 };
     const kw = (c.keywords || [])[0] || "—";
     const checked = store.selectedAutomations.has(c.campaign_id);
@@ -400,10 +456,11 @@ function paintAutoList() {
           <div class="auto-name-line">
             <span class="status-pill ${c.active ? "live" : "stopped"}">${c.active ? "live" : "stopped"}</span>
             <span class="auto-name">${esc(c.name || c.campaign_id)}</span>
+            ${c.platform === "tiktok" ? `<span class="tag tt">TikTok</span>` : ""}
           </div>
           <div class="auto-trigger">
             ${thumb ? `<img src="${esc(thumb)}" alt=""/>` : ""}
-            <span>User comments and comment contains</span>
+            <span>User comments${c.platform === "tiktok" ? " on TikTok" : ""} and comment contains</span>
             <span class="kw-pill">${esc(kw)}</span>
           </div>
         </div>
@@ -523,6 +580,7 @@ async function deleteFromArchive(id) {
 function defaultDraft() {
   return {
     campaign_id: "",
+    platform: igConnected() ? "instagram" : ttConnected() ? "tiktok" : "instagram",
     name: "My automation",
     media_id: "",
     media_thumb: "",
@@ -530,6 +588,7 @@ function defaultDraft() {
     exclude: [],
     public_reply: { enabled: false, texts: ["Sent you a DM! 📩", "Check your DMs 👀"] },
     opening_enabled: true,
+    deliver_in_opening: false,
     check_follow: false,
     ask_email: false,
     reward: { type: "link", value: "" },
@@ -548,13 +607,15 @@ function defaultDraft() {
 function draftFromCampaign(c) {
   return {
     campaign_id: c.campaign_id,
+    platform: c.platform || "instagram",
     name: c.name || c.campaign_id,
     media_id: c.media_id,
-    media_thumb: (store.media.find((m) => m.id === c.media_id) || {}).thumbnail_url || "",
+    media_thumb: thumbFor(c),
     keywords: c.keywords || [],
     exclude: c.exclude || [],
     public_reply: c.public_reply || { enabled: false, texts: ["Sent you a DM! 📩"] },
     opening_enabled: true,
+    deliver_in_opening: !!c.deliver_in_opening,
     check_follow: !!c.check_follow,
     ask_email: !!c.ask_email,
     reward: c.reward || { type: "link", value: "" },
@@ -565,19 +626,16 @@ function draftFromCampaign(c) {
 
 async function renderCreate() {
   const view = $("#view");
-  if (!(store.status || {}).connected) return renderConnectGate(view, "The automation builder and its media picker");
+  if (!anyConnected()) return renderConnectGate(view, "The automation builder and its media picker");
   if (!store.draft) {
     store.draft = defaultDraft();
     markSaved();
   }
+  await loadMedia(store.draft.platform);
   try {
-    if (store.media.length === 0 && store.status.connected && !store.status.token_expired) {
-      const r = await api("/api/media");
-      store.media = r.media || [];
-    }
     store.campaigns = (await api("/api/campaigns")).campaigns || [];
   } catch (e) {
-    // media may fail if not connected; keep going with what we have
+    // keep going with what we have
   }
   const d = store.draft;
 
@@ -654,27 +712,78 @@ const MEDIA_ROW_SIZE = 5;
 function renderSections() {
   const d = store.draft;
   const box = $("#sections");
-  const shownMedia = store.mediaShowAll ? store.media : store.media.slice(0, MEDIA_ROW_SIZE);
-  const hasMore = store.media.length > MEDIA_ROW_SIZE;
+  const tt = d.platform === "tiktok";
+  const allMedia = mediaFor(d.platform);
+  const shownMedia = store.mediaShowAll ? allMedia : allMedia.slice(0, MEDIA_ROW_SIZE);
+  const hasMore = allMedia.length > MEDIA_ROW_SIZE;
+  const platformSwitch = `
+    <div class="platform-switch" id="platformswitch">
+      <button type="button" class="btn sm ${tt ? "ghost" : "primary"}" data-platform="instagram" ${igConnected() ? "" : "disabled title='Connect Instagram first'"}>Instagram</button>
+      <button type="button" class="btn sm ${tt ? "primary" : "ghost"}" data-platform="tiktok" ${ttConnected() ? "" : "disabled title='Connect TikTok first'"}>TikTok</button>
+    </div>`;
   const mediaGrid =
-    store.media.length > 0
+    allMedia.length > 0
       ? shownMedia
           .map(
             (m) => `<div class="media-thumb ${m.id === d.media_id ? "selected" : ""}" data-mid="${esc(m.id)}" data-thumb="${esc(m.thumbnail_url || m.media_url || "")}">
               <img src="${esc(m.thumbnail_url || m.media_url || "")}" alt="" loading="lazy"/></div>`,
           )
           .join("")
-      : `<div class="muted" style="padding:8px 0">Connect Instagram to load your posts. You can still edit the copy and preview below.</div>`;
+      : `<div class="muted" style="padding:8px 0">Connect ${platformLabel(d.platform)} to load your posts. You can still edit the copy and preview below.</div>`;
   const seeMoreBtn = hasMore
     ? `<button class="btn ghost sm" id="mediaSeeMore" style="margin-top:10px">${
-        store.mediaShowAll ? "Show less" : `See more (${store.media.length - MEDIA_ROW_SIZE})`
+        store.mediaShowAll ? "Show less" : `See more (${allMedia.length - MEDIA_ROW_SIZE})`
       }</button>`
     : "";
+
+  const sectionThree = tt
+    ? `
+    <div class="card">
+      <h3><span class="section-num">3</span>They will get</h3>
+      <div class="hint">TikTok’s official API can’t open a DM with someone just for commenting. chatmany replies publicly under their comment asking them to DM the keyword; the moment their DM arrives, the rest of this funnel runs in that chat. (Anyone who DMs the keyword without commenting gets it too.)</div>
+      <label class="field"><span class="label">Public reply under their comment</span><textarea id="c_opening">${esc(d.copy.opening)}</textarea></label>
+      <div class="hint">Use <code>{keyword}</code> for the first keyword. Max 150 characters. Links aren’t clickable in TikTok comments — say what to DM.</div>
+      <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">TikTok reports whether they follow you: followers skip the gate; others get a button card and are re-asked until they do.</div></div>
+        <label class="switch"><input type="checkbox" id="check_follow" ${d.check_follow ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="follow_wrap" style="${d.check_follow ? "" : "display:none"}">
+        <label class="field"><span class="label">Follow message (≤40 chars fits on the card; longer goes as text + a short card)</span><textarea id="c_follow_gate">${esc(d.copy.follow_gate)}</textarea></label>
+        <label class="field"><span class="label">Follow button label (≤20 chars)</span><input type="text" id="c_follow_button" value="${esc(d.copy.follow_button)}"/></label>
+      </div>
+      <div class="toggle-row"><div><div class="tr-title">Ask for their email</div><div class="tr-sub">Sent as a plain message; they type their address.</div></div>
+        <label class="switch"><input type="checkbox" id="ask_email" ${d.ask_email ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="email_wrap" style="${d.ask_email ? "" : "display:none"}">
+        <label class="field"><span class="label">Email ask message</span><textarea id="c_email_ask">${esc(d.copy.email_ask)}</textarea></label>
+      </div>
+    </div>`
+    : `
+    <div class="card">
+      <h3><span class="section-num">3</span>They will get</h3>
+      <div class="toggle-row"><div><div class="tr-title">Just send the link, straight away</div><div class="tr-sub">One private reply containing your delivery message — nothing to tap. Turns off the follow gate and email ask, which both need a tap.</div></div>
+        <label class="switch"><input type="checkbox" id="deliver_in_opening" ${d.deliver_in_opening ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div class="toggle-row"><div><div class="tr-title">An opening DM</div><div class="tr-sub">Sent as a private reply with a button so it survives the Requests folder. Required to start the funnel.</div></div>
+        <label class="switch"><input type="checkbox" id="opening_enabled" ${d.opening_enabled ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="opening_wrap" style="${d.opening_enabled && !d.deliver_in_opening ? "" : "display:none"}">
+        <label class="field"><span class="label">Opening message</span><textarea id="c_opening">${esc(d.copy.opening)}</textarea></label>
+        <label class="field"><span class="label">Button label</span><input type="text" id="c_opening_button" value="${esc(d.copy.opening_button)}"/></label>
+      </div>
+      <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">Self-attestation — the tap advances (the API can’t verify a specific follow).</div></div>
+        <label class="switch"><input type="checkbox" id="check_follow" ${d.check_follow ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="follow_wrap" style="${d.check_follow && !d.deliver_in_opening ? "" : "display:none"}">
+        <label class="field"><span class="label">Follow message</span><textarea id="c_follow_gate">${esc(d.copy.follow_gate)}</textarea></label>
+        <label class="field"><span class="label">Follow button label</span><input type="text" id="c_follow_button" value="${esc(d.copy.follow_button)}"/></label>
+      </div>
+      <div class="toggle-row"><div><div class="tr-title">Ask for their email</div><div class="tr-sub">Uses Instagram’s email chip, with a typed-reply fallback.</div></div>
+        <label class="switch"><input type="checkbox" id="ask_email" ${d.ask_email ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="email_wrap" style="${d.ask_email && !d.deliver_in_opening ? "" : "display:none"}">
+        <label class="field"><span class="label">Email ask message</span><textarea id="c_email_ask">${esc(d.copy.email_ask)}</textarea></label>
+      </div>
+    </div>`;
 
   box.innerHTML = `
     <div class="card">
       <h3><span class="section-num">1</span>When someone comments on</h3>
-      <div class="hint">Pick the post or reel this automation watches.</div>
+      ${platformSwitch}
+      <div class="hint">Pick the ${tt ? "TikTok video" : "post or reel"} this automation watches.</div>
       <div class="radio-row selected"><span class="radio-dot"></span><div><div class="rr-title">A specific post or reel</div><div class="rr-sub">Only comments on the selected media trigger the funnel.</div></div></div>
       <div class="radio-row disabled"><span class="radio-dot"></span><div><div class="rr-title">Any post or reel</div><div class="rr-sub">Soon</div></div></div>
       <div class="media-grid" id="mediagrid">${mediaGrid}</div>
@@ -693,37 +802,25 @@ function renderSections() {
       <div class="radio-row disabled"><span class="radio-dot"></span><div><div class="rr-title">Any word</div><div class="rr-sub">Soon</div></div></div>
 
       <div style="margin-top:8px">
-        <div class="toggle-row"><div><div class="tr-title">Reply to their comment</div><div class="tr-sub">Post a public reply under the comment (rotates to look human).</div></div>
+        <div class="toggle-row"><div><div class="tr-title">Reply to their comment${tt ? " with rotating variants" : ""}</div><div class="tr-sub">${
+          tt
+            ? "On TikTok the public reply IS the nudge. Leave this off to post the text in section 3; turn it on to rotate these variants instead ({keyword} works here too)."
+            : "Post a public reply under the comment (rotates to look human)."
+        }</div></div>
           <label class="switch"><input type="checkbox" id="pr_enabled" ${d.public_reply.enabled ? "checked" : ""}/><span class="slider"></span></label></div>
         <div id="pr_texts_wrap" style="${d.public_reply.enabled ? "" : "display:none"}">
           <label class="field"><span class="label">Public replies (one per line, rotated)</span>
             <textarea id="pr_texts">${esc((d.public_reply.texts || []).join("\n"))}</textarea></label>
         </div>
-        <div class="toggle-row disabled"><div><div class="tr-title">Like their comment</div><div class="tr-sub">Not possible — Instagram's API has no way to like a comment.</div></div>
-          <label class="switch"><input type="checkbox" disabled/><span class="slider"></span></label></div>
+        ${
+          tt
+            ? ""
+            : `<div class="toggle-row disabled"><div><div class="tr-title">Like their comment</div><div class="tr-sub">Not possible — Instagram's API has no way to like a comment.</div></div>
+          <label class="switch"><input type="checkbox" disabled/><span class="slider"></span></label></div>`
+        }
       </div>
     </div>
-
-    <div class="card">
-      <h3><span class="section-num">3</span>They will get</h3>
-      <div class="toggle-row"><div><div class="tr-title">An opening DM</div><div class="tr-sub">Sent as a private reply with a button so it survives the Requests folder. Required to start the funnel.</div></div>
-        <label class="switch"><input type="checkbox" id="opening_enabled" ${d.opening_enabled ? "checked" : ""}/><span class="slider"></span></label></div>
-      <div id="opening_wrap" style="${d.opening_enabled ? "" : "display:none"}">
-        <label class="field"><span class="label">Opening message</span><textarea id="c_opening">${esc(d.copy.opening)}</textarea></label>
-        <label class="field"><span class="label">Button label</span><input type="text" id="c_opening_button" value="${esc(d.copy.opening_button)}"/></label>
-      </div>
-      <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">Self-attestation — the tap advances (the API can’t verify a specific follow).</div></div>
-        <label class="switch"><input type="checkbox" id="check_follow" ${d.check_follow ? "checked" : ""}/><span class="slider"></span></label></div>
-      <div id="follow_wrap" style="${d.check_follow ? "" : "display:none"}">
-        <label class="field"><span class="label">Follow message</span><textarea id="c_follow_gate">${esc(d.copy.follow_gate)}</textarea></label>
-        <label class="field"><span class="label">Follow button label</span><input type="text" id="c_follow_button" value="${esc(d.copy.follow_button)}"/></label>
-      </div>
-      <div class="toggle-row"><div><div class="tr-title">Ask for their email</div><div class="tr-sub">Uses Instagram’s email chip, with a typed-reply fallback.</div></div>
-        <label class="switch"><input type="checkbox" id="ask_email" ${d.ask_email ? "checked" : ""}/><span class="slider"></span></label></div>
-      <div id="email_wrap" style="${d.ask_email ? "" : "display:none"}">
-        <label class="field"><span class="label">Email ask message</span><textarea id="c_email_ask">${esc(d.copy.email_ask)}</textarea></label>
-      </div>
-    </div>
+    ${sectionThree}
 
     <div class="card">
       <h3><span class="section-num">4</span>And then, they will get</h3>
@@ -740,6 +837,26 @@ function renderSections() {
 
 function wireSections() {
   const d = store.draft;
+  // platform
+  $("#platformswitch")?.querySelectorAll("button").forEach((b) => {
+    b.onclick = async () => {
+      const p = b.dataset.platform;
+      if (p === d.platform) return;
+      d.platform = p;
+      d.media_id = "";
+      d.media_thumb = "";
+      if (p === "tiktok") {
+        d.deliver_in_opening = false;
+        if (/tap below/i.test(d.copy.opening)) d.copy.opening = 'DM me "{keyword}" and I\'ll send you the link 📩';
+      } else if (/^DM me/.test(d.copy.opening)) {
+        d.copy.opening = defaultDraft().copy.opening;
+      }
+      store.mediaShowAll = false;
+      await loadMedia(p);
+      renderSections();
+      renderPreview();
+    };
+  });
   // media
   $("#mediagrid")?.querySelectorAll(".media-thumb").forEach((t) => {
     t.onclick = () => {
@@ -791,6 +908,14 @@ function wireSections() {
       renderPreview();
     };
   };
+  bindToggle("deliver_in_opening", (v) => {
+    d.deliver_in_opening = v;
+    if (v) {
+      d.check_follow = false;
+      d.ask_email = false;
+    }
+    renderCreate();
+  });
   bindToggle("pr_enabled", (v) => (d.public_reply.enabled = v), "pr_texts_wrap");
   bindToggle("opening_enabled", (v) => (d.opening_enabled = v), "opening_wrap");
   bindToggle("check_follow", (v) => (d.check_follow = v), "follow_wrap");
@@ -811,12 +936,14 @@ const iosStatusBar = () => `
 function renderPreview() {
   refreshDirtyUI();
   const d = store.draft;
-  const s = store.status || {};
+  const tt = d.platform === "tiktok";
+  const s = tt ? store.tiktok || {} : store.status || {};
   const col = $("#previewcol");
   if (!col) return;
-  const avatar = s.profile_picture_url || "";
+  const avatar = s.profile_picture_url || s.profile_image || "";
   const uname = s.username || "yourbrand";
-  const media = store.media.find((m) => m.id === d.media_id) || store.media[0] || {};
+  const pool = mediaFor(d.platform);
+  const media = pool.find((m) => m.id === d.media_id) || pool[0] || {};
   const thumb = d.media_thumb || media.thumbnail_url || media.media_url || "";
   const kw = d.keywords[0] || "Link";
   const reward = d.reward.value || "your link";
@@ -849,8 +976,10 @@ function renderPreview() {
           }</div>
           ${
             d.public_reply.enabled && (d.public_reply.texts[0] || "")
-              ? `<div class="cmt reply"><div class="av">${esc((uname[0] || "y")).toUpperCase()}</div><div class="body"><span class="u">${esc(uname)}</span>${esc(d.public_reply.texts[0])}<div class="meta">now · Reply</div></div></div>`
-              : ""
+              ? `<div class="cmt reply"><div class="av">${esc((uname[0] || "y")).toUpperCase()}</div><div class="body"><span class="u">${esc(uname)}</span>${esc(d.public_reply.texts[0].replaceAll("{keyword}", kw))}<div class="meta">now · Reply</div></div></div>`
+              : tt && d.copy.opening
+                ? `<div class="cmt reply"><div class="av">${esc((uname[0] || "y")).toUpperCase()}</div><div class="body"><span class="u">${esc(uname)}</span>${esc(d.copy.opening.replaceAll("{keyword}", kw))}<div class="meta">now · Reply</div></div></div>`
+                : ""
           }
         </div>
         <div class="sheet-emojis"><span>❤️</span><span>🙌</span><span>🔥</span><span>👏</span><span>😢</span><span>😍</span><span>😮</span><span>😂</span></div>
@@ -861,26 +990,60 @@ function renderPreview() {
     // DM funnel — a two-sided conversation: business messages on the left, the follower's taps
     // echoed back on the right at every step, so the preview reads as "this is what they'd see."
     const blocks = [];
-    if (d.opening_enabled) {
-      blocks.push(`<div class="bubble in">${esc(d.copy.opening)}</div>`);
-      blocks.push(`<div class="dm-btn">${esc(d.copy.opening_button || "Continue")}</div>`);
-      blocks.push(`<div class="bubble out">${esc(d.copy.opening_button || "Continue")}</div>`);
-      blocks.push(`<div class="dm-note">tap moves the chat out of Requests →</div>`);
-    } else {
-      blocks.push(`<div class="dm-note">Opening DM is off — the funnel won’t start.</div>`);
+    if (tt) {
+      // TikTok: the chat starts with THEIR message (the API cannot open one), then the gates + delivery.
+      blocks.push(`<div class="bubble out">${esc(kw)}</div>`);
+      blocks.push(`<div class="dm-note">they DM the keyword after seeing your public reply →</div>`);
+      if (d.check_follow) {
+        blocks.push(`<div class="bubble in">${esc(d.copy.follow_gate)}</div>`);
+        blocks.push(`<div class="qr"><span class="pill">${esc(d.copy.follow_button || "✅ I followed")}</span></div>`);
+        blocks.push(`<div class="bubble out">${esc(d.copy.follow_button || "✅ I followed")}</div>`);
+      }
+      if (d.ask_email) {
+        blocks.push(`<div class="bubble in">${esc(d.copy.email_ask)}</div>`);
+        blocks.push(`<div class="bubble out">your@email.com</div>`);
+      }
+      blocks.push(`<div class="bubble in">${esc(deliveryText)}</div>`);
+      body = `<div class="ig"><div class="dm">${blocks.join("")}</div></div>`;
+    } else if (d.deliver_in_opening) {
+      // Direct mode: the private reply IS the delivery — one message, nothing to tap.
+      blocks.push(`<div class="bubble in">${esc(deliveryText)}</div>`);
+      blocks.push(`<div class="dm-note">sent straight back as a private reply — no tap needed</div>`);
+      body = `<div class="ig"><div class="dm">${blocks.join("")}</div></div>`;
+      col.innerHTML = `
+        <div class="phone"><div class="phone-screen">
+          ${iosStatusBar()}
+          <div class="seg">${tabBtn("post", "Post")}${tabBtn("comments", "Comments")}${tabBtn("dm", "DM")}</div>
+          ${body}
+        </div></div>`;
+      col.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
+        store.previewTab = b.dataset.tab;
+        renderPreview();
+      }));
+      return;
     }
-    if (d.check_follow) {
-      blocks.push(`<div class="bubble in">${esc(d.copy.follow_gate)}</div>`);
-      blocks.push(`<div class="qr"><span class="pill">${esc(d.copy.follow_button || "✅ I followed")}</span></div>`);
-      blocks.push(`<div class="bubble out">${esc(d.copy.follow_button || "✅ I followed")}</div>`);
+    if (!tt) {
+      if (d.opening_enabled) {
+        blocks.push(`<div class="bubble in">${esc(d.copy.opening)}</div>`);
+        blocks.push(`<div class="dm-btn">${esc(d.copy.opening_button || "Continue")}</div>`);
+        blocks.push(`<div class="bubble out">${esc(d.copy.opening_button || "Continue")}</div>`);
+        blocks.push(`<div class="dm-note">tap moves the chat out of Requests →</div>`);
+      } else {
+        blocks.push(`<div class="dm-note">Opening DM is off — the funnel won’t start.</div>`);
+      }
+      if (d.check_follow) {
+        blocks.push(`<div class="bubble in">${esc(d.copy.follow_gate)}</div>`);
+        blocks.push(`<div class="qr"><span class="pill">${esc(d.copy.follow_button || "✅ I followed")}</span></div>`);
+        blocks.push(`<div class="bubble out">${esc(d.copy.follow_button || "✅ I followed")}</div>`);
+      }
+      if (d.ask_email) {
+        blocks.push(`<div class="bubble in">${esc(d.copy.email_ask)}</div>`);
+        blocks.push(`<div class="qr"><span class="pill">your@email.com</span></div>`);
+        blocks.push(`<div class="bubble out">your@email.com</div>`);
+      }
+      blocks.push(`<div class="bubble in">${esc(deliveryText)}</div>`);
+      body = `<div class="ig"><div class="dm">${blocks.join("")}</div></div>`;
     }
-    if (d.ask_email) {
-      blocks.push(`<div class="bubble in">${esc(d.copy.email_ask)}</div>`);
-      blocks.push(`<div class="qr"><span class="pill">your@email.com</span></div>`);
-      blocks.push(`<div class="bubble out">your@email.com</div>`);
-    }
-    blocks.push(`<div class="bubble in">${esc(deliveryText)}</div>`);
-    body = `<div class="ig"><div class="dm">${blocks.join("")}</div></div>`;
   }
 
   col.innerHTML = `
@@ -962,25 +1125,35 @@ window.addEventListener("beforeunload", (e) => {
 /* ---------------- save ---------------- */
 function buildCampaignFromDraft() {
   const d = store.draft;
+  const tt = d.platform === "tiktok";
   return {
     campaign_id: d.campaign_id || `${slug(d.name)}-${Math.random().toString(36).slice(2, 8)}`,
+    platform: tt ? "tiktok" : "instagram",
     name: d.name,
     media_id: d.media_id,
     keywords: d.keywords,
     exclude: d.exclude,
     public_reply: d.public_reply.enabled ? { enabled: true, texts: d.public_reply.texts } : { enabled: false, texts: d.public_reply.texts },
-    check_follow: d.check_follow,
-    ask_email: d.ask_email,
+    deliver_in_opening: tt ? false : d.deliver_in_opening,
+    check_follow: !tt && d.deliver_in_opening ? false : d.check_follow,
+    ask_email: !tt && d.deliver_in_opening ? false : d.ask_email,
     reward: d.reward,
     copy: d.copy,
   };
 }
 
 function validateDraft(d) {
-  if (!d.media_id) return "Select a post or reel in section 1.";
+  if (!d.media_id) return d.platform === "tiktok" ? "Select a TikTok video in section 1." : "Select a post or reel in section 1.";
   if (!d.keywords.length) return "Add at least one keyword in section 2.";
   if (!d.reward.value) return "Add your link or reward in section 4.";
-  if (!d.opening_enabled) return "Turn on the opening DM — it’s required to start the funnel.";
+  if (d.platform === "tiktok") {
+    if (!d.public_reply.enabled && !d.copy.opening.trim()) return "Add the public reply text in section 3 — it’s what tells people to DM you.";
+    if (d.public_reply.enabled && !d.public_reply.texts.length) return "Add at least one public reply variant in section 2.";
+  } else if (!d.deliver_in_opening && !d.opening_enabled) {
+    // In direct mode the private reply carries the delivery itself, so there is no opening to gate on.
+    return "Turn on the opening DM — it’s required to start the funnel.";
+  }
+  if (!d.copy.delivery.trim()) return "Add the message they’ll receive in section 4.";
   return null;
 }
 

@@ -3,8 +3,6 @@
 // 429 / rate-limit errors. Cross-invocation hourly caps are enforced separately in the poller
 // via the events table. Network waits don't count against the 10ms CPU budget.
 
-import { InstagramApiError } from "../api/client";
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface QueueOptions {
@@ -44,7 +42,7 @@ export class SendQueue {
         this.lastSendAt = Date.now();
         return result;
       } catch (e) {
-        const isRate = e instanceof InstagramApiError && e.isRateLimit;
+        const isRate = isRateLimitError(e);
         if (!isRate || attempt >= this.maxRetries) {
           this.lastSendAt = Date.now();
           throw e;
@@ -56,4 +54,9 @@ export class SendQueue {
       }
     }
   }
+}
+
+/** Both InstagramApiError and TikTokApiError expose `isRateLimit`; the queue backs off on either. */
+function isRateLimitError(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { isRateLimit?: unknown }).isRateLimit === true;
 }

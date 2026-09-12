@@ -27,6 +27,7 @@ import {
   kvGet,
   kvSet,
   logEvent,
+  logEvents,
   markCommentProcessed,
   releaseSend,
   updateConversation,
@@ -106,6 +107,25 @@ export class Engine {
    * (so the caller leaves the comment unprocessed for a retry on the next poll).
    */
   private async sendOpening(campaign: Campaign, evt: NormalizedComment): Promise<boolean> {
+    // Direct mode: the private reply IS the delivery — one plain-text message with the reward,
+    // nothing to tap. The funnel is complete the moment it sends, so the conversation opens DONE.
+    if (campaign.deliver_in_opening) {
+      const text = renderDelivery(campaign);
+      const ok = await this.trySend(
+        () => this.client.privateReplyText(evt.comment_id, text),
+        "opening_direct",
+        `opening:${campaign.campaign_id}:${evt.comment_id}`,
+      );
+      if (!ok) return false;
+      await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "DONE");
+      await logEvents(this.db, [
+        { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+        { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid },
+        { campaignId: campaign.campaign_id, type: "delivered", igsid: evt.igsid },
+      ]);
+      return true;
+    }
+
     const button = {
       type: "postback" as const,
       title: campaign.copy.opening_button ?? "Continue",
@@ -118,8 +138,10 @@ export class Engine {
     );
     if (!ok) return false;
     await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "AWAITING_TAP");
-    await logEvent(this.db, campaign.campaign_id, "comment_matched", evt.igsid);
-    await logEvent(this.db, campaign.campaign_id, "opening_sent", evt.igsid);
+    await logEvents(this.db, [
+      { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+      { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid },
+    ]);
     return true;
   }
 
@@ -263,7 +285,7 @@ export class Engine {
         break;
       }
       case "DELIVER": {
-        const text = campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
+        const text = renderDelivery(campaign);
         const ok = await this.trySend(
           () => this.client.sendText(igsid, text),
           "delivery",
@@ -350,11 +372,13 @@ export class Engine {
       await this.queue.run(fn);
       return true;
     } catch (e) {
-      // An InstagramApiError means we received an HTTP response — the request reached Instagram
-      // and was refused, so nothing went out. Anything else (fetch threw, timeout, socket closed)
-      // means we never learned the outcome, and the message may already be in the person's inbox.
-      const rejected = e instanceof InstagramApiError;
-      if (rejected) {
+      // A 4xx InstagramApiError means Instagram refused the request outright, so nothing went out
+      // and retrying is safe. Everything else is an AMBIGUOUS outcome — the message may already be
+      // in the person's inbox — and must never be retried blind: a fetch that threw (timeout,
+      // socket closed), and equally a 5xx, which Instagram returns for sends it has actually
+      // delivered (see isAmbiguousFailure). Retrying those re-DMs someone every poll, forever.
+      const refused = e instanceof InstagramApiError && !isAmbiguousFailure(e);
+      if (refused) {
         if (claimKey) await releaseSend(this.db, claimKey);
         console.warn(`[chatmany] send failed (${label}), will retry: ${msg(e)}`);
         return false;
@@ -369,4 +393,23 @@ export class Engine {
 
 function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * True when a failed send tells us nothing about whether the message went out.
+ *
+ * Instagram answers `HTTP 500 / code 1 "An unknown error has occurred."` for private replies it
+ * has, in fact, delivered — observed live on 2026-08-23, where every "failed" opening landed in
+ * the recipient's inbox and the retry loop re-sent it every 90s. A 5xx is never proof of refusal.
+ * Genuine rate limiting (429 / codes 4, 17, 32, 613, 80007) IS a refusal: nothing was sent, and
+ * the queue's backoff is the right answer, so it stays retryable.
+ */
+function isAmbiguousFailure(e: InstagramApiError): boolean {
+  if (e.isRateLimit) return false;
+  return e.status >= 500 || e.code === 1 || e.code === 2;
+}
+
+/** The delivery message a campaign sends, with {reward} substituted. */
+function renderDelivery(campaign: Campaign): string {
+  return campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
 }
