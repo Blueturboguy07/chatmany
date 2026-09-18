@@ -75,9 +75,9 @@ export class FakeClient {
     this.guardAfter("text");
     return { message_id: "m" };
   }
-  async getFollowersCount() {
-    this.calls.followers.push({});
-    return this.followers;
+  async isUserFollowingBusiness(igsid: string) {
+    this.calls.followers.push({ igsid });
+    return this.followers > 0;
   }
 
   asClient(): InstagramClient {

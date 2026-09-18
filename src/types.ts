@@ -62,6 +62,7 @@ export interface Campaign {
   /** Human-friendly automation name shown in the builder/list (optional). */
   name?: string;
   media_id: string;
+  comment_anything?: boolean;
   keywords: string[];
   exclude?: string[];
   public_reply?: PublicReplyConfig;
