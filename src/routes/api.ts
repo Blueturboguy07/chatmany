@@ -70,11 +70,15 @@ async function mediaResponse(env: Env): Promise<Response> {
 }
 
 async function campaignsList(env: Env, url: URL): Promise<Response> {
-  const archived = url.searchParams.get("archived") === "1";
-  const items = await getAllCampaigns(env.DB, { archived });
-  return json({
-    campaigns: items.map((i) => ({ ...i.campaign, active: i.active, archived: i.archived, updated_at: i.updated_at })),
-  });
+  try {
+    const archived = url.searchParams.get("archived") === "1";
+    const items = await getAllCampaigns(env.DB, { archived });
+    return json({
+      campaigns: items.map((i) => ({ ...i.campaign, active: i.active, archived: i.archived, updated_at: i.updated_at })),
+    });
+  } catch (err: any) {
+    return json({ error: "campaignsList error: " + err.message, stack: err.stack }, 500);
+  }
 }
 
 async function campaignSave(env: Env, req: Request): Promise<Response> {

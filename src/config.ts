@@ -24,8 +24,14 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
   if (!isNonEmptyString(c.media_id)) {
     throw new ConfigError(`${where}.media_id is required`);
   }
-  if (!Array.isArray(c.keywords) || c.keywords.length === 0 || !c.keywords.every(isNonEmptyString)) {
-    throw new ConfigError(`${where}.keywords must be a non-empty array of strings`);
+  if (!c.comment_anything) {
+    if (!Array.isArray(c.keywords) || c.keywords.length === 0 || !c.keywords.every(isNonEmptyString)) {
+      throw new ConfigError(`${where}.keywords must be a non-empty array of strings`);
+    }
+  } else {
+    if (c.keywords && (!Array.isArray(c.keywords) || !c.keywords.every(isNonEmptyString))) {
+      throw new ConfigError(`${where}.keywords must be an array of strings`);
+    }
   }
   if (c.exclude !== undefined && (!Array.isArray(c.exclude) || !c.exclude.every(isNonEmptyString))) {
     throw new ConfigError(`${where}.exclude must be an array of strings`);

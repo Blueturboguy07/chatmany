@@ -24,8 +24,6 @@ import {
   getConversation,
   getOpenConversations,
   isCommentProcessed,
-  kvGet,
-  kvSet,
   logEvent,
   markCommentProcessed,
   releaseSend,
@@ -68,7 +66,7 @@ export class Engine {
     let pendingRetry = false;
 
     for (const campaign of campaigns) {
-      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude, campaign.comment_anything)) continue;
       matchedCampaignId = campaign.campaign_id;
 
       // Public actions are per-comment (independent toggles), guarded so re-polls don't repeat them.
@@ -101,18 +99,13 @@ export class Engine {
   }
 
   /**
-   * Open the chat via a private reply to the comment, using a postback button (Step 1).
-   * Returns true if the opening was sent and the funnel entry recorded; false on a send failure
-   * (so the caller leaves the comment unprocessed for a retry on the next poll).
+   * Open the chat via a private reply to the comment. (Step 1).
+   * Instagram doesn't support buttons here, so we just send the opening text.
+   * Any reply from the user will advance the state.
    */
   private async sendOpening(campaign: Campaign, evt: NormalizedComment): Promise<boolean> {
-    const button = {
-      type: "postback" as const,
-      title: campaign.copy.opening_button ?? "Continue",
-      payload: OPENING_PAYLOAD,
-    };
     const ok = await this.trySend(
-      () => this.client.privateReplyWithButtons(evt.comment_id, campaign.copy.opening, [button]),
+      () => this.client.privateReplyText(evt.comment_id, campaign.copy.opening),
       "opening",
       `opening:${campaign.campaign_id}:${evt.comment_id}`,
     );
@@ -169,11 +162,11 @@ export class Engine {
     const isConfirm = evt.payload === FOLLOW_PAYLOAD || titleMatches(evt.text, expected);
     if (!isConfirm) return; // unrelated message; stay in AWAITING_FOLLOW
 
-    // verify_follow_count: weak heuristic (documented unreliable). Compare follower total against
-    // the baseline captured when the gate was sent; if it didn't grow, re-send and stay (capped).
+    // verify_follow_count: strict verification using the is_user_follow_business field.
+    // Fetches the user profile and definitively checks if they follow the business account.
     if (campaign.verify_follow_count && !followRetriesExhausted(retries)) {
-      const looksFollowed = await this.followerCountGrew(campaign, evt.igsid);
-      if (!looksFollowed) {
+      const isFollowing = await this.client.isUserFollowingBusiness(evt.igsid);
+      if (!isFollowing) {
         await this.resendFollowGate(campaign, evt.igsid, retries);
         return;
       }
@@ -243,7 +236,6 @@ export class Engine {
           `follow_gate:${campaign.campaign_id}:${igsid}`,
         );
         if (!ok) return;
-        if (campaign.verify_follow_count) await this.captureFollowerBaseline(campaign, igsid);
         await commit("AWAITING_FOLLOW");
         break;
       }
@@ -291,32 +283,7 @@ export class Engine {
     }
   }
 
-  // ---- verify_follow_count helpers (weak heuristic) ----
 
-  private baselineKey(campaign: Campaign, igsid: string): string {
-    return `follow_baseline:${campaign.campaign_id}:${igsid}`;
-  }
-
-  private async captureFollowerBaseline(campaign: Campaign, igsid: string): Promise<void> {
-    try {
-      const count = await this.client.getFollowersCount();
-      if (count !== undefined) await kvSet(this.db, this.baselineKey(campaign, igsid), String(count));
-    } catch {
-      // best-effort; absence just means we fail open on confirm
-    }
-  }
-
-  private async followerCountGrew(campaign: Campaign, igsid: string): Promise<boolean> {
-    const baselineRaw = await kvGet(this.db, this.baselineKey(campaign, igsid));
-    if (baselineRaw === null) return true; // no baseline → fail open (advance)
-    try {
-      const current = await this.client.getFollowersCount();
-      if (current === undefined) return true;
-      return current > Number(baselineRaw);
-    } catch {
-      return true;
-    }
-  }
 
   // ---- send helpers ----
 
