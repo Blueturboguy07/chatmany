@@ -11,6 +11,7 @@ import type {
   NormalizedComment,
   NormalizedMessage,
   State,
+  Env,
 } from "../types";
 import { InstagramApiError } from "../api/client";
 import { commentTriggers, extractEmail } from "./match";
@@ -24,11 +25,14 @@ import {
   getConversation,
   getOpenConversations,
   isCommentProcessed,
+  kvGet,
+  kvSet,
   logEvent,
   markCommentProcessed,
   releaseSend,
   updateConversation,
 } from "../db";
+import { generateSmartReply } from "./ai";
 import type { ConversationRow } from "../db";
 
 const OPENING_PAYLOAD = "OPENING_TAP";
@@ -46,6 +50,7 @@ export class Engine {
     private readonly db: D1Database,
     private readonly client: InstagramClient,
     private readonly queue: SendQueue,
+    private readonly env: Env,
   ) {}
 
   // ---- comments ----
@@ -126,6 +131,7 @@ export class Engine {
    */
   async handleMessage(evt: NormalizedMessage): Promise<void> {
     const open = await getOpenConversations(this.db, evt.igsid);
+    let advanced = false;
     for (const convo of open) {
       // Idempotency: only act on a message that arrived after our last transition, so re-reads of
       // the same message in the conversation history don't advance the funnel twice.
@@ -134,6 +140,7 @@ export class Engine {
       const campaign = await getCampaign(this.db, convo.campaign_id);
       if (!campaign) continue;
 
+      advanced = true;
       switch (convo.state as State) {
         case "AWAITING_TAP":
           await this.onTap(campaign, evt);
@@ -148,6 +155,30 @@ export class Engine {
           break; // NEW / DELIVER / DONE — nothing to do
       }
     }
+
+    if (!advanced && open.length === 0) {
+      await this.handleSmartReply(evt);
+    }
+  }
+
+  private async handleSmartReply(evt: NormalizedMessage): Promise<void> {
+    if (!evt.text) return;
+    
+    // Deduplicate AI replies for the same message across repolls
+    const lastAiTs = await kvGet(this.db, `ai_reply_ts:${evt.igsid}`);
+    if (lastAiTs && evt.timestamp <= Number(lastAiTs)) return;
+    
+    // Set first so we don't spam if generation takes a long time
+    await kvSet(this.db, `ai_reply_ts:${evt.igsid}`, String(evt.timestamp));
+
+    const reply = await generateSmartReply(this.env, evt.text);
+    if (!reply) return;
+
+    await this.trySend(
+      () => this.client.sendText(evt.igsid, reply),
+      "ai_reply",
+      `ai_reply:${evt.igsid}:${evt.timestamp}`
+    );
   }
 
   private async onTap(campaign: Campaign, evt: NormalizedMessage): Promise<void> {

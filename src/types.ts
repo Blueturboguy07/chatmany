@@ -17,6 +17,7 @@ export interface Env {
   APP_SECRET: string;
   OWNER_TOKEN: string;
   WEBHOOK_VERIFY_TOKEN?: string;
+  MUSE_API_KEY?: string;
 }
 
 /** Funnel state for one person in one campaign. */
