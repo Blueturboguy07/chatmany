@@ -37,3 +37,23 @@ POLL_INTERVAL_SECONDS = "90"
 # Redirect URI registered in your Meta app. Must match exactly: https://<your-worker>/auth/callback
 # You MUST change this before deploying — the placeholder is not a working URL.
 REDIRECT_URI = "https://chatmany.blueturboguy07.workers.dev/auth/callback"
+# "1" turns on multi-tenant hosting (publik's deployment only). Unset = self-host, unchanged.
+# HOSTED = "1"
+# publik API base the metered units are reported to.
+# PUBLIK_API_BASE = "https://publikhq.com"
+
+# ---------------------------------------------------------------- hosted mode
+# Everything below is inert on a self-host deployment (HOSTED is unset, so the hosted routes
+# answer 404 and the cron keeps polling this one account). publik's own deployment sets HOSTED=1
+# and the five secrets listed in .env.example.
+
+# One Durable Object per tenant: the tenant's comment queue, send pacing, poll slot, 613 cooldown
+# and usage counters. This is why Cloudflare was chosen over cheaper per-event hosts — it is the
+# only one of them with a native per-tenant single-threaded scheduler. See src/tenant/runner.ts.
+[[durable_objects.bindings]]
+name = "TENANT"
+class_name = "TenantDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TenantDO"]

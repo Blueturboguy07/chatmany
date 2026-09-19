@@ -224,6 +224,39 @@ export class InstagramClient {
     return res.data ?? [];
   }
 
+  /**
+   * One page of a media's comments, newest first, including inline replies.
+   *
+   * The unpaged 100-comment read window is why the ghost reel lost ~1,850 comments outright: a
+   * refused send released its claim to retry, but by the next tick the comment had scrolled out
+   * of the newest-100 window and was never seen again. The hosted backlog sweep walks these
+   * pages with a stored cursor (src/tenant/runner.ts).
+   */
+  async getCommentsPage(
+    mediaId: string,
+    limit = 50,
+    after?: string,
+  ): Promise<{ comments: IgComment[]; next?: string }> {
+    const params: Record<string, string> = {
+      fields:
+        "id,text,timestamp,username,from{id,username},replies{id,text,timestamp,username,from{id,username}}",
+      limit: String(limit),
+    };
+    if (after) params.after = after;
+    const res = await this.get<{
+      data?: Array<IgComment & { replies?: { data?: IgComment[] } }>;
+      paging?: { cursors?: { after?: string }; next?: string };
+    }>(`/${mediaId}/comments`, params);
+    const comments: IgComment[] = [];
+    for (const c of res.data ?? []) {
+      comments.push(c);
+      for (const r of c.replies?.data ?? []) comments.push(r);
+    }
+    // Only advance when Meta actually offers a next page; a cursor with no `next` is the end.
+    const next = res.paging?.next ? res.paging?.cursors?.after : undefined;
+    return { comments, next };
+  }
+
   /** Read recent conversations + their messages (how inbound taps/replies arrive without webhooks). */
   async getConversations(limit = 20): Promise<IgConversation[]> {
     const res = await this.get<{ data?: IgConversation[] }>(`/${this.igUserId}/conversations`, {

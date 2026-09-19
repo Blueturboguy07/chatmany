@@ -3,6 +3,7 @@
 // added later and served from this same Worker.
 
 import type { Env } from "./types";
+import { isHosted } from "./types";
 import { buildRuntime } from "./runtime";
 import { pollComments } from "./poller/commentPoll";
 import { pollMessages } from "./poller/messagePoll";
@@ -13,18 +14,28 @@ import { handleConfigExport, handleConfigImport } from "./routes/config";
 import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
 import { handleApi } from "./routes/api";
 import { isOwner, json } from "./routes/http";
+import { fanOutTick, handleHosted } from "./routes/hosted";
+
+export { TenantDO } from "./tenant/do";
 
 const POLL_CRON = "* * * * *";
 const REFRESH_CRON = "0 3 * * *";
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const { pathname } = url;
     const method = req.method.toUpperCase();
 
     // --- public routes ---
-    if (pathname === "/health") return json({ ok: true, mode: env.MODE });
+    if (pathname === "/health") {
+      return json({ ok: true, mode: env.MODE, hosted: isHosted(env) });
+    }
+
+    // --- hosted (multi-tenant) routes: /webhook/{tenant} and the /hosted/* control plane ---
+    // Returns null on a self-host deployment, so nothing below changes for a self-hoster.
+    const hostedRes = await handleHosted(env, req, url, ctx);
+    if (hostedRes) return hostedRes;
 
     // OAuth onboarding.
     if (pathname === "/auth/authorize" && method === "GET") return handleAuthorize(env);
@@ -73,11 +84,20 @@ export default {
 
   async scheduled(event: ScheduledController, env: Env): Promise<void> {
     if (event.cron === REFRESH_CRON) {
+      // Hosted tenants each refresh their own token on their own alarm (src/tenant/do.ts).
+      if (isHosted(env)) return;
       const result = await refreshTokenIfDue(env);
       console.log(`[chatmany] token refresh: ${result.status}`);
       return;
     }
     if (event.cron === POLL_CRON) {
+      // Hosted: the cron does NO work inline. It reads the polling tenants and pokes each
+      // tenant's Durable Object to re-arm its own alarm — the 2026-08-23 exceededCpu kill was
+      // an account-wide tick doing every tenant's work in one invocation.
+      if (isHosted(env)) {
+        await fanOutTick(env);
+        return;
+      }
       // In webhook mode, push replaces polling; skip the comment/message polls.
       if (env.MODE === "webhook") return;
       await runPoll(env);

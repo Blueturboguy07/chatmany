@@ -14,6 +14,12 @@ export interface QueueOptions {
   maxRetries?: number;
   /** Base backoff, ms (doubles each retry). */
   baseBackoffMs?: number;
+  /**
+   * Epoch ms of the previous send, carried over from an earlier invocation. A hosted tenant's
+   * Durable Object persists it, so pacing survives across runs instead of restarting at zero and
+   * firing a burst the moment a new run begins.
+   */
+  initialLastSendAt?: number;
 }
 
 export class SendQueue {
@@ -23,9 +29,15 @@ export class SendQueue {
   private readonly baseBackoffMs: number;
 
   constructor(opts: QueueOptions = {}) {
+    this.lastSendAt = opts.initialLastSendAt ?? 0;
     this.minIntervalMs = opts.minIntervalMs ?? 1200;
     this.maxRetries = opts.maxRetries ?? 3;
     this.baseBackoffMs = opts.baseBackoffMs ?? 1000;
+  }
+
+  /** Epoch ms of the last send attempt, for the caller to persist between invocations. */
+  get lastSendAtMs(): number {
+    return this.lastSendAt;
   }
 
   /**
