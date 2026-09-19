@@ -4,6 +4,12 @@ Self-hosted Instagram **comment-to-DM** automation, using the **official Meta In
 
 You clone this repo, create your own Meta app, connect your own Instagram account, and deploy your own instance on Cloudflare's free tier. **The author hosts nothing and stores none of your data.** Free ($0/month) at single-creator scale.
 
+> **Hosted mode (in progress, not deployed):** a multi-tenant mode lives alongside this one, so
+> publik can run chatmany for a creator who does not want to operate a Cloudflare account — one
+> Durable Object per creator, one shared D1, webhook-first, metered per use. Self-hosting is
+> unchanged and stays supported. See [docs/HOSTED.md](docs/HOSTED.md). Nothing is published to
+> users yet.
+
 > **Status:** feature-complete for single-creator use — the automation engine (OAuth, polling, token refresh, rate limiting, analytics events) **plus a ManyChat-style web UI** to build and monitor campaigns without editing JSON.
 
 > 🎬 **TikTok support is coming soon.** Same comment→DM funnel, same self-hosted setup. Star the repo to get notified.
