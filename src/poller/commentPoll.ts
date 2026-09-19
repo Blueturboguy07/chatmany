@@ -2,7 +2,7 @@
 // converts them to normalized events, and feeds the engine. A conservative account-wide hourly
 // cap on opening DMs guards the shared rate budget across cron ticks (Section 10).
 
-import { getActiveCampaigns, countEventsGlobal, now } from "../db";
+import { getActiveCampaigns, countEventsGlobal, now, processedCommentIds } from "../db";
 import type { Runtime } from "../runtime";
 import { toUnixSeconds } from "../runtime";
 import type { NormalizedComment } from "../types";
@@ -32,8 +32,16 @@ export async function pollComments(rt: Runtime, db: D1Database): Promise<void> {
       console.warn(`[chatmany] getComments(${mediaId}) failed: ${e instanceof Error ? e.message : e}`);
       continue;
     }
+    // ONE batched lookup per page instead of one D1 round trip per comment. The per-comment
+    // shape is what Cloudflare killed with outcome=exceededCpu on 2026-08-23: ~300 reads per
+    // tick across three media, the invocation cut off mid-loop, and every comment after the cut
+    // silently unserved while the app's own tables looked healthy.
+    const alreadyProcessed = await processedCommentIds(db, comments.map((c) => c.id));
+
     for (const c of comments) {
+      if (alreadyProcessed.has(c.id)) continue;
       const igsid = c.from?.id;
+      if (igsid && igsid === rt.igUserId) continue; // never answer our own comment
       if (!igsid) {
         // Meta's Graph API omits `from.id` for some commenters (permissions/visibility vary by
         // account); without it we can't correlate a later DM reply, so the comment is unreachable.
