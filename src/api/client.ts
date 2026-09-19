@@ -188,6 +188,17 @@ export class InstagramClient {
     return this.sendButtonTemplate({ commentId }, text, buttons);
   }
 
+  /**
+   * Open a chat with a fresh commenter by private-replying with the delivery text itself — no
+   * button, no tap (`deliver_in_opening`). Byte-identical in shape to what ManyChat sends.
+   */
+  privateReplyText(commentId: string, text: string): Promise<{ message_id?: string }> {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { comment_id: commentId },
+      message: { text },
+    });
+  }
+
   // ---- public comment actions ----
 
   /** Post a public reply under a comment (text only; publishes asynchronously). */

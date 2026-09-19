@@ -530,6 +530,7 @@ function defaultDraft() {
     exclude: [],
     public_reply: { enabled: false, texts: ["Sent you a DM! 📩", "Check your DMs 👀"] },
     opening_enabled: true,
+    deliver_in_opening: false,
     check_follow: false,
     ask_email: false,
     reward: { type: "link", value: "" },
@@ -555,6 +556,7 @@ function draftFromCampaign(c) {
     exclude: c.exclude || [],
     public_reply: c.public_reply || { enabled: false, texts: ["Sent you a DM! 📩"] },
     opening_enabled: true,
+    deliver_in_opening: !!c.deliver_in_opening,
     check_follow: !!c.check_follow,
     ask_email: !!c.ask_email,
     reward: c.reward || { type: "link", value: "" },
@@ -712,6 +714,8 @@ function renderSections() {
         <label class="field"><span class="label">Opening message</span><textarea id="c_opening">${esc(d.copy.opening)}</textarea></label>
         <label class="field"><span class="label">Button label</span><input type="text" id="c_opening_button" value="${esc(d.copy.opening_button)}"/></label>
       </div>
+      <div class="toggle-row"><div><div class="tr-title">Just send the link, straight away</div><div class="tr-sub">One private reply carrying the link itself — no button to tap. Every tap is a step people drop at.</div></div>
+        <label class="switch"><input type="checkbox" id="deliver_in_opening" ${d.deliver_in_opening ? "checked" : ""}/><span class="slider"></span></label></div>
       <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">Self-attestation — the tap advances (the API can’t verify a specific follow).</div></div>
         <label class="switch"><input type="checkbox" id="check_follow" ${d.check_follow ? "checked" : ""}/><span class="slider"></span></label></div>
       <div id="follow_wrap" style="${d.check_follow ? "" : "display:none"}">
@@ -793,6 +797,22 @@ function wireSections() {
   };
   bindToggle("pr_enabled", (v) => (d.public_reply.enabled = v), "pr_texts_wrap");
   bindToggle("opening_enabled", (v) => (d.opening_enabled = v), "opening_wrap");
+  bindToggle("deliver_in_opening", (v) => {
+    d.deliver_in_opening = v;
+    // Direct delivery and the follow/email gates are mutually exclusive: both gates need a tap.
+    if (v) {
+      d.check_follow = false;
+      d.ask_email = false;
+      const cf = $("#check_follow");
+      const ae = $("#ask_email");
+      if (cf) cf.checked = false;
+      if (ae) ae.checked = false;
+      const fw = $("#follow_wrap");
+      const ew = $("#email_wrap");
+      if (fw) fw.style.display = "none";
+      if (ew) ew.style.display = "none";
+    }
+  });
   bindToggle("check_follow", (v) => (d.check_follow = v), "follow_wrap");
   bindToggle("ask_email", (v) => (d.ask_email = v), "email_wrap");
 }
@@ -969,7 +989,8 @@ function buildCampaignFromDraft() {
     keywords: d.keywords,
     exclude: d.exclude,
     public_reply: d.public_reply.enabled ? { enabled: true, texts: d.public_reply.texts } : { enabled: false, texts: d.public_reply.texts },
-    check_follow: d.check_follow,
+    deliver_in_opening: d.deliver_in_opening,
+    check_follow: d.deliver_in_opening ? false : d.check_follow,
     ask_email: d.ask_email,
     reward: d.reward,
     copy: d.copy,

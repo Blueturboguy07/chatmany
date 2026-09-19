@@ -55,6 +55,24 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
     }
   }
 
+  if (c.refusal_fallback !== undefined) {
+    const rf = c.refusal_fallback as Record<string, unknown>;
+    if (typeof rf.enabled !== "boolean") {
+      throw new ConfigError(`${where}.refusal_fallback.enabled must be a boolean`);
+    }
+    if (rf.text !== undefined && !isNonEmptyString(rf.text)) {
+      throw new ConfigError(`${where}.refusal_fallback.text must be a non-empty string`);
+    }
+  }
+
+  // Direct delivery sends the reward in the opening private reply, so there is no tap left to
+  // gate on. Accepting both would silently drop one of them at runtime.
+  if (c.deliver_in_opening && (c.check_follow || c.ask_email)) {
+    throw new ConfigError(
+      `${where}.deliver_in_opening cannot be combined with check_follow or ask_email (both need a tap)`,
+    );
+  }
+
   // Reflect only known fields; ignore extras so the schema can evolve.
   return {
     campaign_id: c.campaign_id,
@@ -63,6 +81,8 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
     keywords: c.keywords as string[],
     exclude: (c.exclude as string[] | undefined) ?? [],
     public_reply: c.public_reply as Campaign["public_reply"],
+    deliver_in_opening: Boolean(c.deliver_in_opening),
+    refusal_fallback: c.refusal_fallback as Campaign["refusal_fallback"],
     like_comment: Boolean(c.like_comment),
     check_follow: Boolean(c.check_follow),
     verify_follow_count: Boolean(c.verify_follow_count),
