@@ -1,0 +1,13 @@
+-- Global (type, created_at) index on events.
+--
+-- FIELD FIX (deployed to the live Worker 2026-09-01, never committed — see session note
+-- `chatmany-poller-cpu-limit`). `countEventsGlobal` runs `WHERE type = ? AND created_at >= ?`
+-- once per poll tick for the hourly opening cap. The only index was
+-- idx_events_campaign (campaign_id, type, created_at) — it leads with campaign_id, so the
+-- global count could not use it and FULL-SCANNED events every 90 seconds: 5,348,013 rows read
+-- in 24h against D1's 5,000,000/day free-tier cap, which 500'd every route and every cron tick
+-- for the rest of the UTC day (`D1_ERROR: ... exceeded ... daily row read limit`).
+--
+-- The hosted path counts per tenant inside that tenant's Durable Object instead (see
+-- src/tenant/runner.ts), so this index serves the self-host path that still runs the query.
+CREATE INDEX IF NOT EXISTS idx_events_type_time ON events (type, created_at);
