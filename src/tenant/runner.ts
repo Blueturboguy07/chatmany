@@ -239,6 +239,10 @@ export class TenantRunner {
     const queue = new SendQueue({
       minIntervalMs: this.limits.sendIntervalMs,
       initialLastSendAt: lastSendAt,
+      // No in-queue retry on a rate limit. Sleeping through 1s + 2s + 4s of backoff inside the
+      // run and trying again is what kept the account's 613 limit permanently saturated on
+      // 2026-09-15; the tenant stops instead, cools down, and picks the comment up next run.
+      maxRetries: 0,
     });
     const ctx: RunContext = { startedAt, queue, newComments: 0, hourRemaining: Math.max(0, this.limits.hourlySendCap - sentThisHour), engine: null as unknown as Engine };
     ctx.engine = new Engine(this.deps.db, this.deps.client, queue, {

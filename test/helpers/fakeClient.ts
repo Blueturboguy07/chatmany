@@ -119,6 +119,37 @@ export class FakeClient {
     this.guardAfter("text");
     return { message_id: "m" };
   }
+  /**
+   * Pages of comments per media, as Instagram would return them (newest first). Set with
+   * `seedComments`. `getCommentsPage` walks them with an opaque cursor, so the backlog sweep can
+   * be tested end to end.
+   */
+  pages: Record<string, Array<Array<{ id: string; text: string; from: { id: string; username?: string }; timestamp?: string }>>> = {};
+  /** Inbound conversations for the polling path. */
+  conversations: Array<{ id: string; messages?: { data?: Array<{ id?: string; from?: { id: string }; message?: string; created_time?: string }> } }> = [];
+
+  seedComments(mediaId: string, pages: Array<Array<{ id: string; text: string; igsid: string }>>): void {
+    this.pages[mediaId] = pages.map((p) =>
+      p.map((c) => ({ id: c.id, text: c.text, from: { id: c.igsid, username: c.igsid }, timestamp: new Date().toISOString() })),
+    );
+  }
+
+  async getCommentsPage(mediaId: string, _limit = 50, after?: string) {
+    const pages = this.pages[mediaId] ?? [];
+    const idx = after ? Number(after) : 0;
+    const page = pages[idx] ?? [];
+    const next = idx + 1 < pages.length ? String(idx + 1) : undefined;
+    return { comments: page, next };
+  }
+
+  async getComments(mediaId: string, _limit = 50) {
+    return (this.pages[mediaId] ?? [])[0] ?? [];
+  }
+
+  async getConversations(_limit = 20) {
+    return this.conversations;
+  }
+
   async getFollowersCount() {
     this.calls.followers.push({});
     return this.followers;
