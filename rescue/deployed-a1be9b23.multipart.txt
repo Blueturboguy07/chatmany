@@ -1,0 +1,3822 @@
+--9b0b3a5437e0694ce75e0d391c911f2c0c848f728cfc8cd0db631747c9ef
+Content-Disposition: form-data; name="index.js"
+
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// node_modules/unenv/dist/runtime/_internal/utils.mjs
+// @__NO_SIDE_EFFECTS__
+function createNotImplementedError(name) {
+  return new Error(`[unenv] ${name} is not implemented yet!`);
+}
+__name(createNotImplementedError, "createNotImplementedError");
+// @__NO_SIDE_EFFECTS__
+function notImplemented(name) {
+  const fn = /* @__PURE__ */ __name(() => {
+    throw /* @__PURE__ */ createNotImplementedError(name);
+  }, "fn");
+  return Object.assign(fn, { __unenv__: true });
+}
+__name(notImplemented, "notImplemented");
+// @__NO_SIDE_EFFECTS__
+function notImplementedClass(name) {
+  return class {
+    __unenv__ = true;
+    constructor() {
+      throw new Error(`[unenv] ${name} is not implemented yet!`);
+    }
+  };
+}
+__name(notImplementedClass, "notImplementedClass");
+
+// node_modules/unenv/dist/runtime/node/internal/perf_hooks/performance.mjs
+var _timeOrigin = globalThis.performance?.timeOrigin ?? Date.now();
+var _performanceNow = globalThis.performance?.now ? globalThis.performance.now.bind(globalThis.performance) : () => Date.now() - _timeOrigin;
+var nodeTiming = {
+  name: "node",
+  entryType: "node",
+  startTime: 0,
+  duration: 0,
+  nodeStart: 0,
+  v8Start: 0,
+  bootstrapComplete: 0,
+  environment: 0,
+  loopStart: 0,
+  loopExit: 0,
+  idleTime: 0,
+  uvMetricsInfo: {
+    loopCount: 0,
+    events: 0,
+    eventsWaiting: 0
+  },
+  detail: void 0,
+  toJSON() {
+    return this;
+  }
+};
+var PerformanceEntry = class {
+  static {
+    __name(this, "PerformanceEntry");
+  }
+  __unenv__ = true;
+  detail;
+  entryType = "event";
+  name;
+  startTime;
+  constructor(name, options) {
+    this.name = name;
+    this.startTime = options?.startTime || _performanceNow();
+    this.detail = options?.detail;
+  }
+  get duration() {
+    return _performanceNow() - this.startTime;
+  }
+  toJSON() {
+    return {
+      name: this.name,
+      entryType: this.entryType,
+      startTime: this.startTime,
+      duration: this.duration,
+      detail: this.detail
+    };
+  }
+};
+var PerformanceMark = class PerformanceMark2 extends PerformanceEntry {
+  static {
+    __name(this, "PerformanceMark");
+  }
+  entryType = "mark";
+  constructor() {
+    super(...arguments);
+  }
+  get duration() {
+    return 0;
+  }
+};
+var PerformanceMeasure = class extends PerformanceEntry {
+  static {
+    __name(this, "PerformanceMeasure");
+  }
+  entryType = "measure";
+};
+var PerformanceResourceTiming = class extends PerformanceEntry {
+  static {
+    __name(this, "PerformanceResourceTiming");
+  }
+  entryType = "resource";
+  serverTiming = [];
+  connectEnd = 0;
+  connectStart = 0;
+  decodedBodySize = 0;
+  domainLookupEnd = 0;
+  domainLookupStart = 0;
+  encodedBodySize = 0;
+  fetchStart = 0;
+  initiatorType = "";
+  name = "";
+  nextHopProtocol = "";
+  redirectEnd = 0;
+  redirectStart = 0;
+  requestStart = 0;
+  responseEnd = 0;
+  responseStart = 0;
+  secureConnectionStart = 0;
+  startTime = 0;
+  transferSize = 0;
+  workerStart = 0;
+  responseStatus = 0;
+};
+var PerformanceObserverEntryList = class {
+  static {
+    __name(this, "PerformanceObserverEntryList");
+  }
+  __unenv__ = true;
+  getEntries() {
+    return [];
+  }
+  getEntriesByName(_name, _type) {
+    return [];
+  }
+  getEntriesByType(type) {
+    return [];
+  }
+};
+var Performance = class {
+  static {
+    __name(this, "Performance");
+  }
+  __unenv__ = true;
+  timeOrigin = _timeOrigin;
+  eventCounts = /* @__PURE__ */ new Map();
+  _entries = [];
+  _resourceTimingBufferSize = 0;
+  navigation = void 0;
+  timing = void 0;
+  timerify(_fn, _options) {
+    throw createNotImplementedError("Performance.timerify");
+  }
+  get nodeTiming() {
+    return nodeTiming;
+  }
+  eventLoopUtilization() {
+    return {};
+  }
+  markResourceTiming() {
+    return new PerformanceResourceTiming("");
+  }
+  onresourcetimingbufferfull = null;
+  now() {
+    if (this.timeOrigin === _timeOrigin) {
+      return _performanceNow();
+    }
+    return Date.now() - this.timeOrigin;
+  }
+  clearMarks(markName) {
+    this._entries = markName ? this._entries.filter((e) => e.name !== markName) : this._entries.filter((e) => e.entryType !== "mark");
+  }
+  clearMeasures(measureName) {
+    this._entries = measureName ? this._entries.filter((e) => e.name !== measureName) : this._entries.filter((e) => e.entryType !== "measure");
+  }
+  clearResourceTimings() {
+    this._entries = this._entries.filter((e) => e.entryType !== "resource" || e.entryType !== "navigation");
+  }
+  getEntries() {
+    return this._entries;
+  }
+  getEntriesByName(name, type) {
+    return this._entries.filter((e) => e.name === name && (!type || e.entryType === type));
+  }
+  getEntriesByType(type) {
+    return this._entries.filter((e) => e.entryType === type);
+  }
+  mark(name, options) {
+    const entry = new PerformanceMark(name, options);
+    this._entries.push(entry);
+    return entry;
+  }
+  measure(measureName, startOrMeasureOptions, endMark) {
+    let start;
+    let end;
+    if (typeof startOrMeasureOptions === "string") {
+      start = this.getEntriesByName(startOrMeasureOptions, "mark")[0]?.startTime;
+      end = this.getEntriesByName(endMark, "mark")[0]?.startTime;
+    } else {
+      start = Number.parseFloat(startOrMeasureOptions?.start) || this.now();
+      end = Number.parseFloat(startOrMeasureOptions?.end) || this.now();
+    }
+    const entry = new PerformanceMeasure(measureName, {
+      startTime: start,
+      detail: {
+        start,
+        end
+      }
+    });
+    this._entries.push(entry);
+    return entry;
+  }
+  setResourceTimingBufferSize(maxSize) {
+    this._resourceTimingBufferSize = maxSize;
+  }
+  addEventListener(type, listener, options) {
+    throw createNotImplementedError("Performance.addEventListener");
+  }
+  removeEventListener(type, listener, options) {
+    throw createNotImplementedError("Performance.removeEventListener");
+  }
+  dispatchEvent(event) {
+    throw createNotImplementedError("Performance.dispatchEvent");
+  }
+  toJSON() {
+    return this;
+  }
+};
+var PerformanceObserver = class {
+  static {
+    __name(this, "PerformanceObserver");
+  }
+  __unenv__ = true;
+  static supportedEntryTypes = [];
+  _callback = null;
+  constructor(callback) {
+    this._callback = callback;
+  }
+  takeRecords() {
+    return [];
+  }
+  disconnect() {
+    throw createNotImplementedError("PerformanceObserver.disconnect");
+  }
+  observe(options) {
+    throw createNotImplementedError("PerformanceObserver.observe");
+  }
+  bind(fn) {
+    return fn;
+  }
+  runInAsyncScope(fn, thisArg, ...args) {
+    return fn.call(thisArg, ...args);
+  }
+  asyncId() {
+    return 0;
+  }
+  triggerAsyncId() {
+    return 0;
+  }
+  emitDestroy() {
+    return this;
+  }
+};
+var performance = globalThis.performance && "addEventListener" in globalThis.performance ? globalThis.performance : new Performance();
+
+// node_modules/@cloudflare/unenv-preset/dist/runtime/polyfill/performance.mjs
+if (!("__unenv__" in performance)) {
+  const proto = Performance.prototype;
+  for (const key of Object.getOwnPropertyNames(proto)) {
+    if (key !== "constructor" && !(key in performance)) {
+      const desc = Object.getOwnPropertyDescriptor(proto, key);
+      if (desc) {
+        Object.defineProperty(performance, key, desc);
+      }
+    }
+  }
+}
+globalThis.performance = performance;
+globalThis.Performance = Performance;
+globalThis.PerformanceEntry = PerformanceEntry;
+globalThis.PerformanceMark = PerformanceMark;
+globalThis.PerformanceMeasure = PerformanceMeasure;
+globalThis.PerformanceObserver = PerformanceObserver;
+globalThis.PerformanceObserverEntryList = PerformanceObserverEntryList;
+globalThis.PerformanceResourceTiming = PerformanceResourceTiming;
+
+// node_modules/unenv/dist/runtime/node/console.mjs
+import { Writable } from "node:stream";
+
+// node_modules/unenv/dist/runtime/mock/noop.mjs
+var noop_default = Object.assign(() => {
+}, { __unenv__: true });
+
+// node_modules/unenv/dist/runtime/node/console.mjs
+var _console = globalThis.console;
+var _ignoreErrors = true;
+var _stderr = new Writable();
+var _stdout = new Writable();
+var log = _console?.log ?? noop_default;
+var info = _console?.info ?? log;
+var trace = _console?.trace ?? info;
+var debug = _console?.debug ?? log;
+var table = _console?.table ?? log;
+var error = _console?.error ?? log;
+var warn = _console?.warn ?? error;
+var createTask = _console?.createTask ?? /* @__PURE__ */ notImplemented("console.createTask");
+var clear = _console?.clear ?? noop_default;
+var count = _console?.count ?? noop_default;
+var countReset = _console?.countReset ?? noop_default;
+var dir = _console?.dir ?? noop_default;
+var dirxml = _console?.dirxml ?? noop_default;
+var group = _console?.group ?? noop_default;
+var groupEnd = _console?.groupEnd ?? noop_default;
+var groupCollapsed = _console?.groupCollapsed ?? noop_default;
+var profile = _console?.profile ?? noop_default;
+var profileEnd = _console?.profileEnd ?? noop_default;
+var time = _console?.time ?? noop_default;
+var timeEnd = _console?.timeEnd ?? noop_default;
+var timeLog = _console?.timeLog ?? noop_default;
+var timeStamp = _console?.timeStamp ?? noop_default;
+var Console = _console?.Console ?? /* @__PURE__ */ notImplementedClass("console.Console");
+var _times = /* @__PURE__ */ new Map();
+var _stdoutErrorHandler = noop_default;
+var _stderrErrorHandler = noop_default;
+
+// node_modules/@cloudflare/unenv-preset/dist/runtime/node/console.mjs
+var workerdConsole = globalThis["console"];
+var {
+  assert,
+  clear: clear2,
+  // @ts-expect-error undocumented public API
+  context,
+  count: count2,
+  countReset: countReset2,
+  // @ts-expect-error undocumented public API
+  createTask: createTask2,
+  debug: debug2,
+  dir: dir2,
+  dirxml: dirxml2,
+  error: error2,
+  group: group2,
+  groupCollapsed: groupCollapsed2,
+  groupEnd: groupEnd2,
+  info: info2,
+  log: log2,
+  profile: profile2,
+  profileEnd: profileEnd2,
+  table: table2,
+  time: time2,
+  timeEnd: timeEnd2,
+  timeLog: timeLog2,
+  timeStamp: timeStamp2,
+  trace: trace2,
+  warn: warn2
+} = workerdConsole;
+Object.assign(workerdConsole, {
+  Console,
+  _ignoreErrors,
+  _stderr,
+  _stderrErrorHandler,
+  _stdout,
+  _stdoutErrorHandler,
+  _times
+});
+var console_default = workerdConsole;
+
+// node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-console
+globalThis.console = console_default;
+
+// node_modules/unenv/dist/runtime/node/internal/process/hrtime.mjs
+var hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtime2(startTime) {
+  const now2 = Date.now();
+  const seconds = Math.trunc(now2 / 1e3);
+  const nanos = now2 % 1e3 * 1e6;
+  if (startTime) {
+    let diffSeconds = seconds - startTime[0];
+    let diffNanos = nanos - startTime[0];
+    if (diffNanos < 0) {
+      diffSeconds = diffSeconds - 1;
+      diffNanos = 1e9 + diffNanos;
+    }
+    return [diffSeconds, diffNanos];
+  }
+  return [seconds, nanos];
+}, "hrtime"), { bigint: /* @__PURE__ */ __name(function bigint() {
+  return BigInt(Date.now() * 1e6);
+}, "bigint") });
+
+// node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+import { EventEmitter } from "node:events";
+
+// node_modules/unenv/dist/runtime/node/internal/tty/read-stream.mjs
+var ReadStream = class {
+  static {
+    __name(this, "ReadStream");
+  }
+  fd;
+  isRaw = false;
+  isTTY = false;
+  constructor(fd) {
+    this.fd = fd;
+  }
+  setRawMode(mode) {
+    this.isRaw = mode;
+    return this;
+  }
+};
+
+// node_modules/unenv/dist/runtime/node/internal/tty/write-stream.mjs
+var WriteStream = class {
+  static {
+    __name(this, "WriteStream");
+  }
+  fd;
+  columns = 80;
+  rows = 24;
+  isTTY = false;
+  constructor(fd) {
+    this.fd = fd;
+  }
+  clearLine(dir3, callback) {
+    callback && callback();
+    return false;
+  }
+  clearScreenDown(callback) {
+    callback && callback();
+    return false;
+  }
+  cursorTo(x, y, callback) {
+    callback && typeof callback === "function" && callback();
+    return false;
+  }
+  moveCursor(dx, dy, callback) {
+    callback && callback();
+    return false;
+  }
+  getColorDepth(env2) {
+    return 1;
+  }
+  hasColors(count3, env2) {
+    return false;
+  }
+  getWindowSize() {
+    return [this.columns, this.rows];
+  }
+  write(str, encoding, cb) {
+    if (str instanceof Uint8Array) {
+      str = new TextDecoder().decode(str);
+    }
+    try {
+      console.log(str);
+    } catch {
+    }
+    cb && typeof cb === "function" && cb();
+    return false;
+  }
+};
+
+// node_modules/unenv/dist/runtime/node/internal/process/node-version.mjs
+var NODE_VERSION = "22.14.0";
+
+// node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+var Process = class _Process extends EventEmitter {
+  static {
+    __name(this, "Process");
+  }
+  env;
+  hrtime;
+  nextTick;
+  constructor(impl) {
+    super();
+    this.env = impl.env;
+    this.hrtime = impl.hrtime;
+    this.nextTick = impl.nextTick;
+    for (const prop of [...Object.getOwnPropertyNames(_Process.prototype), ...Object.getOwnPropertyNames(EventEmitter.prototype)]) {
+      const value = this[prop];
+      if (typeof value === "function") {
+        this[prop] = value.bind(this);
+      }
+    }
+  }
+  // --- event emitter ---
+  emitWarning(warning, type, code) {
+    console.warn(`${code ? `[${code}] ` : ""}${type ? `${type}: ` : ""}${warning}`);
+  }
+  emit(...args) {
+    return super.emit(...args);
+  }
+  listeners(eventName) {
+    return super.listeners(eventName);
+  }
+  // --- stdio (lazy initializers) ---
+  #stdin;
+  #stdout;
+  #stderr;
+  get stdin() {
+    return this.#stdin ??= new ReadStream(0);
+  }
+  get stdout() {
+    return this.#stdout ??= new WriteStream(1);
+  }
+  get stderr() {
+    return this.#stderr ??= new WriteStream(2);
+  }
+  // --- cwd ---
+  #cwd = "/";
+  chdir(cwd2) {
+    this.#cwd = cwd2;
+  }
+  cwd() {
+    return this.#cwd;
+  }
+  // --- dummy props and getters ---
+  arch = "";
+  platform = "";
+  argv = [];
+  argv0 = "";
+  execArgv = [];
+  execPath = "";
+  title = "";
+  pid = 200;
+  ppid = 100;
+  get version() {
+    return `v${NODE_VERSION}`;
+  }
+  get versions() {
+    return { node: NODE_VERSION };
+  }
+  get allowedNodeEnvironmentFlags() {
+    return /* @__PURE__ */ new Set();
+  }
+  get sourceMapsEnabled() {
+    return false;
+  }
+  get debugPort() {
+    return 0;
+  }
+  get throwDeprecation() {
+    return false;
+  }
+  get traceDeprecation() {
+    return false;
+  }
+  get features() {
+    return {};
+  }
+  get release() {
+    return {};
+  }
+  get connected() {
+    return false;
+  }
+  get config() {
+    return {};
+  }
+  get moduleLoadList() {
+    return [];
+  }
+  constrainedMemory() {
+    return 0;
+  }
+  availableMemory() {
+    return 0;
+  }
+  uptime() {
+    return 0;
+  }
+  resourceUsage() {
+    return {};
+  }
+  // --- noop methods ---
+  ref() {
+  }
+  unref() {
+  }
+  // --- unimplemented methods ---
+  umask() {
+    throw createNotImplementedError("process.umask");
+  }
+  getBuiltinModule() {
+    return void 0;
+  }
+  getActiveResourcesInfo() {
+    throw createNotImplementedError("process.getActiveResourcesInfo");
+  }
+  exit() {
+    throw createNotImplementedError("process.exit");
+  }
+  reallyExit() {
+    throw createNotImplementedError("process.reallyExit");
+  }
+  kill() {
+    throw createNotImplementedError("process.kill");
+  }
+  abort() {
+    throw createNotImplementedError("process.abort");
+  }
+  dlopen() {
+    throw createNotImplementedError("process.dlopen");
+  }
+  setSourceMapsEnabled() {
+    throw createNotImplementedError("process.setSourceMapsEnabled");
+  }
+  loadEnvFile() {
+    throw createNotImplementedError("process.loadEnvFile");
+  }
+  disconnect() {
+    throw createNotImplementedError("process.disconnect");
+  }
+  cpuUsage() {
+    throw createNotImplementedError("process.cpuUsage");
+  }
+  setUncaughtExceptionCaptureCallback() {
+    throw createNotImplementedError("process.setUncaughtExceptionCaptureCallback");
+  }
+  hasUncaughtExceptionCaptureCallback() {
+    throw createNotImplementedError("process.hasUncaughtExceptionCaptureCallback");
+  }
+  initgroups() {
+    throw createNotImplementedError("process.initgroups");
+  }
+  openStdin() {
+    throw createNotImplementedError("process.openStdin");
+  }
+  assert() {
+    throw createNotImplementedError("process.assert");
+  }
+  binding() {
+    throw createNotImplementedError("process.binding");
+  }
+  // --- attached interfaces ---
+  permission = { has: /* @__PURE__ */ notImplemented("process.permission.has") };
+  report = {
+    directory: "",
+    filename: "",
+    signal: "SIGUSR2",
+    compact: false,
+    reportOnFatalError: false,
+    reportOnSignal: false,
+    reportOnUncaughtException: false,
+    getReport: /* @__PURE__ */ notImplemented("process.report.getReport"),
+    writeReport: /* @__PURE__ */ notImplemented("process.report.writeReport")
+  };
+  finalization = {
+    register: /* @__PURE__ */ notImplemented("process.finalization.register"),
+    unregister: /* @__PURE__ */ notImplemented("process.finalization.unregister"),
+    registerBeforeExit: /* @__PURE__ */ notImplemented("process.finalization.registerBeforeExit")
+  };
+  memoryUsage = Object.assign(() => ({
+    arrayBuffers: 0,
+    rss: 0,
+    external: 0,
+    heapTotal: 0,
+    heapUsed: 0
+  }), { rss: /* @__PURE__ */ __name(() => 0, "rss") });
+  // --- undefined props ---
+  mainModule = void 0;
+  domain = void 0;
+  // optional
+  send = void 0;
+  exitCode = void 0;
+  channel = void 0;
+  getegid = void 0;
+  geteuid = void 0;
+  getgid = void 0;
+  getgroups = void 0;
+  getuid = void 0;
+  setegid = void 0;
+  seteuid = void 0;
+  setgid = void 0;
+  setgroups = void 0;
+  setuid = void 0;
+  // internals
+  _events = void 0;
+  _eventsCount = void 0;
+  _exiting = void 0;
+  _maxListeners = void 0;
+  _debugEnd = void 0;
+  _debugProcess = void 0;
+  _fatalException = void 0;
+  _getActiveHandles = void 0;
+  _getActiveRequests = void 0;
+  _kill = void 0;
+  _preload_modules = void 0;
+  _rawDebug = void 0;
+  _startProfilerIdleNotifier = void 0;
+  _stopProfilerIdleNotifier = void 0;
+  _tickCallback = void 0;
+  _disconnect = void 0;
+  _handleQueue = void 0;
+  _pendingMessage = void 0;
+  _channel = void 0;
+  _send = void 0;
+  _linkedBinding = void 0;
+};
+
+// node_modules/@cloudflare/unenv-preset/dist/runtime/node/process.mjs
+var globalProcess = globalThis["process"];
+var getBuiltinModule = globalProcess.getBuiltinModule;
+var workerdProcess = getBuiltinModule("node:process");
+var unenvProcess = new Process({
+  env: globalProcess.env,
+  hrtime,
+  // `nextTick` is available from workerd process v1
+  nextTick: workerdProcess.nextTick
+});
+var { exit, features, platform } = workerdProcess;
+var {
+  _channel,
+  _debugEnd,
+  _debugProcess,
+  _disconnect,
+  _events,
+  _eventsCount,
+  _exiting,
+  _fatalException,
+  _getActiveHandles,
+  _getActiveRequests,
+  _handleQueue,
+  _kill,
+  _linkedBinding,
+  _maxListeners,
+  _pendingMessage,
+  _preload_modules,
+  _rawDebug,
+  _send,
+  _startProfilerIdleNotifier,
+  _stopProfilerIdleNotifier,
+  _tickCallback,
+  abort,
+  addListener,
+  allowedNodeEnvironmentFlags,
+  arch,
+  argv,
+  argv0,
+  assert: assert2,
+  availableMemory,
+  binding,
+  channel,
+  chdir,
+  config,
+  connected,
+  constrainedMemory,
+  cpuUsage,
+  cwd,
+  debugPort,
+  disconnect,
+  dlopen,
+  domain,
+  emit,
+  emitWarning,
+  env,
+  eventNames,
+  execArgv,
+  execPath,
+  exitCode,
+  finalization,
+  getActiveResourcesInfo,
+  getegid,
+  geteuid,
+  getgid,
+  getgroups,
+  getMaxListeners,
+  getuid,
+  hasUncaughtExceptionCaptureCallback,
+  hrtime: hrtime3,
+  initgroups,
+  kill,
+  listenerCount,
+  listeners,
+  loadEnvFile,
+  mainModule,
+  memoryUsage,
+  moduleLoadList,
+  nextTick,
+  off,
+  on,
+  once,
+  openStdin,
+  permission,
+  pid,
+  ppid,
+  prependListener,
+  prependOnceListener,
+  rawListeners,
+  reallyExit,
+  ref,
+  release,
+  removeAllListeners,
+  removeListener,
+  report,
+  resourceUsage,
+  send,
+  setegid,
+  seteuid,
+  setgid,
+  setgroups,
+  setMaxListeners,
+  setSourceMapsEnabled,
+  setuid,
+  setUncaughtExceptionCaptureCallback,
+  sourceMapsEnabled,
+  stderr,
+  stdin,
+  stdout,
+  throwDeprecation,
+  title,
+  traceDeprecation,
+  umask,
+  unref,
+  uptime,
+  version,
+  versions
+} = unenvProcess;
+var _process = {
+  abort,
+  addListener,
+  allowedNodeEnvironmentFlags,
+  hasUncaughtExceptionCaptureCallback,
+  setUncaughtExceptionCaptureCallback,
+  loadEnvFile,
+  sourceMapsEnabled,
+  arch,
+  argv,
+  argv0,
+  chdir,
+  config,
+  connected,
+  constrainedMemory,
+  availableMemory,
+  cpuUsage,
+  cwd,
+  debugPort,
+  dlopen,
+  disconnect,
+  emit,
+  emitWarning,
+  env,
+  eventNames,
+  execArgv,
+  execPath,
+  exit,
+  finalization,
+  features,
+  getBuiltinModule,
+  getActiveResourcesInfo,
+  getMaxListeners,
+  hrtime: hrtime3,
+  kill,
+  listeners,
+  listenerCount,
+  memoryUsage,
+  nextTick,
+  on,
+  off,
+  once,
+  pid,
+  platform,
+  ppid,
+  prependListener,
+  prependOnceListener,
+  rawListeners,
+  release,
+  removeAllListeners,
+  removeListener,
+  report,
+  resourceUsage,
+  setMaxListeners,
+  setSourceMapsEnabled,
+  stderr,
+  stdin,
+  stdout,
+  title,
+  throwDeprecation,
+  traceDeprecation,
+  umask,
+  uptime,
+  version,
+  versions,
+  // @ts-expect-error old API
+  domain,
+  initgroups,
+  moduleLoadList,
+  reallyExit,
+  openStdin,
+  assert: assert2,
+  binding,
+  send,
+  exitCode,
+  channel,
+  getegid,
+  geteuid,
+  getgid,
+  getgroups,
+  getuid,
+  setegid,
+  seteuid,
+  setgid,
+  setgroups,
+  setuid,
+  permission,
+  mainModule,
+  _events,
+  _eventsCount,
+  _exiting,
+  _maxListeners,
+  _debugEnd,
+  _debugProcess,
+  _fatalException,
+  _getActiveHandles,
+  _getActiveRequests,
+  _kill,
+  _preload_modules,
+  _rawDebug,
+  _startProfilerIdleNotifier,
+  _stopProfilerIdleNotifier,
+  _tickCallback,
+  _disconnect,
+  _handleQueue,
+  _pendingMessage,
+  _channel,
+  _send,
+  _linkedBinding
+};
+var process_default = _process;
+
+// node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-process
+globalThis.process = process_default;
+
+// src/api/client.ts
+var GRAPH_HOST = "https://graph.instagram.com";
+var RATE_LIMIT_CODES = /* @__PURE__ */ new Set([4, 17, 32, 613, 80007]);
+var InstagramApiError = class extends Error {
+  constructor(message, status, code, subcode, fbtraceId) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.subcode = subcode;
+    this.fbtraceId = fbtraceId;
+    this.name = "InstagramApiError";
+  }
+  status;
+  code;
+  subcode;
+  fbtraceId;
+  static {
+    __name(this, "InstagramApiError");
+  }
+  /** True when the platform is telling us to back off. */
+  get isRateLimit() {
+    return this.status === 429 || this.code !== void 0 && RATE_LIMIT_CODES.has(this.code);
+  }
+};
+var InstagramClient = class {
+  constructor(accessToken, version2, igUserId = "me") {
+    this.accessToken = accessToken;
+    this.version = version2;
+    this.igUserId = igUserId;
+  }
+  accessToken;
+  version;
+  igUserId;
+  static {
+    __name(this, "InstagramClient");
+  }
+  base(path) {
+    return `${GRAPH_HOST}/${this.version}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  /** GET with query params; access_token appended automatically. */
+  async get(path, params = {}) {
+    const url = new URL(this.base(path));
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    url.searchParams.set("access_token", this.accessToken);
+    const res = await fetch(url.toString(), { method: "GET" });
+    return this.parse(res);
+  }
+  /** POST JSON body; access_token as a query param (Graph convention). */
+  async post(path, body) {
+    const url = new URL(this.base(path));
+    url.searchParams.set("access_token", this.accessToken);
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return this.parse(res);
+  }
+  async parse(res) {
+    const text = await res.text();
+    let json2 = void 0;
+    try {
+      json2 = text ? JSON.parse(text) : void 0;
+    } catch {
+    }
+    if (!res.ok) {
+      const err = json2?.error;
+      throw new InstagramApiError(
+        err?.message ?? `HTTP ${res.status}`,
+        res.status,
+        err?.code,
+        err?.error_subcode,
+        err?.fbtrace_id
+      );
+    }
+    return json2;
+  }
+  // ---- messaging (Send API) ----
+  /** Send a plain text DM to a user by IGSID. */
+  sendText(recipientIgsid, text) {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { id: recipientIgsid },
+      message: { text }
+    });
+  }
+  /** Send a text DM with quick-reply chips (rendered after the thread is accepted). */
+  sendQuickReplies(recipientIgsid, text, quickReplies) {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { id: recipientIgsid },
+      message: { text, quick_replies: quickReplies }
+    });
+  }
+  /** Send a button-template message with postback buttons (survives the Requests folder). */
+  sendButtonTemplate(recipient, text, buttons) {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: recipient.commentId ? { comment_id: recipient.commentId } : { id: recipient.igsid },
+      message: {
+        attachment: {
+          type: "template",
+          payload: { template_type: "button", text, buttons }
+        }
+      }
+    });
+  }
+  /**
+   * Open a chat with a fresh commenter via a private reply to their comment. This is the only
+   * sanctioned way to DM a new commenter — valid up to 7 days after the comment, once per comment.
+   * The opening message uses a button template so it survives the Requests folder (Section: Step 1).
+   */
+  privateReplyWithButtons(commentId, text, buttons) {
+    return this.sendButtonTemplate({ commentId }, text, buttons);
+  }
+  /**
+   * Private-reply to a comment with a plain text message — the whole funnel in one send, used
+   * when a campaign delivers the reward directly instead of gating it behind a button tap.
+   * Same 7-day / once-per-comment window as privateReplyWithButtons.
+   */
+  privateReplyText(commentId, text) {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { comment_id: commentId },
+      message: { text }
+    });
+  }
+  // ---- public comment actions ----
+  /** Post a public reply under a comment (text only; publishes asynchronously). */
+  replyToComment(commentId, message) {
+    return this.post(`/${commentId}/replies`, { message });
+  }
+  // NOTE: there is deliberately no likeComment() here. Instagram's API cannot like a comment.
+  // Its comment operations are limited to: read (GET /{media-id}/comments), reply
+  // (POST /{comment-id}/replies), delete (DELETE /{comment-id}), hide/unhide
+  // (POST /{comment-id}), and enable/disable on media (POST /{media-id}). There is no /likes
+  // edge. An earlier version posted to /{comment-id}/likes, which simply errored on every
+  // triggering comment.
+  // ---- reads ----
+  /** Read comments on a media object. Only called for media attached to an active campaign. */
+  async getComments(mediaId, limit = 100) {
+    const res = await this.get(`/${mediaId}/comments`, {
+      fields: "id,text,timestamp,username,from{id,username}",
+      limit: String(limit)
+    });
+    return res.data ?? [];
+  }
+  /** Read recent conversations + their messages (how inbound taps/replies arrive without webhooks). */
+  async getConversations(limit = 20) {
+    const res = await this.get(`/${this.igUserId}/conversations`, {
+      platform: "instagram",
+      fields: "id,messages.limit(10){id,from,to,message,created_time}",
+      limit: String(limit)
+    });
+    return res.data ?? [];
+  }
+  /**
+   * The connected account's profile. Requests only widely-supported fields so OAuth connect never
+   * fails on an account where an optional field (e.g. followers_count) isn't returnable; the
+   * follower count is fetched separately, on demand, by getFollowersCount.
+   */
+  getMe() {
+    return this.get(`/me`, {
+      fields: "user_id,username,account_type,profile_picture_url"
+    });
+  }
+  /** The connected account's media (for the builder media picker + preview). */
+  async getMedia(limit = 25) {
+    const res = await this.get(`/me/media`, {
+      fields: "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count",
+      limit: String(limit)
+    });
+    return res.data ?? [];
+  }
+  /**
+   * Weak follower-count heuristic for verify_follow_count mode (Section: Step 3). The API cannot
+   * verify a specific user's follow; this only reads the account's own follower total.
+   */
+  async getFollowersCount() {
+    const me = await this.get(`/me`, { fields: "followers_count" });
+    return me.followers_count;
+  }
+};
+async function refreshLongLivedToken(version2, accessToken) {
+  const url = new URL(`${GRAPH_HOST}/refresh_access_token`);
+  url.searchParams.set("grant_type", "ig_refresh_token");
+  url.searchParams.set("access_token", accessToken);
+  const res = await fetch(url.toString());
+  const text = await res.text();
+  if (!res.ok) throw new InstagramApiError(`token refresh failed: ${text}`, res.status);
+  return JSON.parse(text);
+}
+__name(refreshLongLivedToken, "refreshLongLivedToken");
+
+// src/queue/queue.ts
+var sleep = /* @__PURE__ */ __name((ms) => new Promise((r) => setTimeout(r, ms)), "sleep");
+var SendQueue = class {
+  static {
+    __name(this, "SendQueue");
+  }
+  lastSendAt = 0;
+  minIntervalMs;
+  maxRetries;
+  baseBackoffMs;
+  constructor(opts = {}) {
+    this.minIntervalMs = opts.minIntervalMs ?? 1200;
+    this.maxRetries = opts.maxRetries ?? 3;
+    this.baseBackoffMs = opts.baseBackoffMs ?? 1e3;
+  }
+  /**
+   * Run a send with pacing + backoff. Throws if it still fails after retries, or on any
+   * non-rate-limit error (so the caller can decide whether to leave state unchanged).
+   */
+  async run(fn) {
+    const since = Date.now() - this.lastSendAt;
+    if (since < this.minIntervalMs) await sleep(this.minIntervalMs - since);
+    let attempt = 0;
+    for (; ; ) {
+      try {
+        const result = await fn();
+        this.lastSendAt = Date.now();
+        return result;
+      } catch (e) {
+        const isRate = isRateLimitError(e);
+        if (!isRate || attempt >= this.maxRetries) {
+          this.lastSendAt = Date.now();
+          throw e;
+        }
+        const backoff = this.baseBackoffMs * 2 ** attempt;
+        console.warn(`[chatmany] rate-limited, backing off ${backoff}ms (attempt ${attempt + 1})`);
+        await sleep(backoff);
+        attempt++;
+      }
+    }
+  }
+};
+function isRateLimitError(e) {
+  return typeof e === "object" && e !== null && e.isRateLimit === true;
+}
+__name(isRateLimitError, "isRateLimitError");
+
+// src/engine/match.ts
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+__name(escapeRegex, "escapeRegex");
+function matchesKeyword(text, keyword) {
+  const kw = keyword.trim();
+  if (!kw) return false;
+  if (kw === "*") return true;
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegex(kw)}(?![\\p{L}\\p{N}_])`, "iu");
+  return re.test(text);
+}
+__name(matchesKeyword, "matchesKeyword");
+function matchesAnyKeyword(text, keywords) {
+  return keywords.some((k) => matchesKeyword(text, k));
+}
+__name(matchesAnyKeyword, "matchesAnyKeyword");
+function hasExcludedWord(text, exclude) {
+  if (!exclude || exclude.length === 0) return false;
+  return exclude.some((w) => matchesKeyword(text, w));
+}
+__name(hasExcludedWord, "hasExcludedWord");
+function commentTriggers(text, keywords, exclude) {
+  return matchesAnyKeyword(text, keywords) && !hasExcludedWord(text, exclude);
+}
+__name(commentTriggers, "commentTriggers");
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function extractEmail(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (EMAIL_RE.test(trimmed)) return trimmed;
+  const m = trimmed.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+  return m ? m[0] : null;
+}
+__name(extractEmail, "extractEmail");
+
+// src/engine/transitions.ts
+function afterTap(campaign) {
+  if (campaign.check_follow) return "AWAITING_FOLLOW";
+  if (campaign.ask_email) return "AWAITING_EMAIL";
+  return "DELIVER";
+}
+__name(afterTap, "afterTap");
+function afterFollow(campaign) {
+  if (campaign.ask_email) return "AWAITING_EMAIL";
+  return "DELIVER";
+}
+__name(afterFollow, "afterFollow");
+function expectedTitleForState(state, campaign) {
+  switch (state) {
+    case "AWAITING_TAP":
+      return null;
+    // any inbound message counts as the tap
+    case "AWAITING_FOLLOW":
+      return campaign.copy.follow_button ?? "\u2705 I followed";
+    default:
+      return null;
+  }
+}
+__name(expectedTitleForState, "expectedTitleForState");
+var CAPPED_FOLLOW_RETRIES = 3;
+function followRetriesExhausted(retries) {
+  return retries >= CAPPED_FOLLOW_RETRIES;
+}
+__name(followRetriesExhausted, "followRetriesExhausted");
+function titleMatches(incoming, expected) {
+  if (!incoming) return false;
+  return incoming.trim().toLowerCase() === expected.trim().toLowerCase();
+}
+__name(titleMatches, "titleMatches");
+
+// src/config.ts
+var ConfigError = class extends Error {
+  static {
+    __name(this, "ConfigError");
+  }
+};
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+__name(isNonEmptyString, "isNonEmptyString");
+function validateCampaign(input, index = 0) {
+  const where = `campaigns[${index}]`;
+  if (typeof input !== "object" || input === null) {
+    throw new ConfigError(`${where} must be an object`);
+  }
+  const c = input;
+  if (!isNonEmptyString(c.campaign_id)) {
+    throw new ConfigError(`${where}.campaign_id is required`);
+  }
+  if (c.platform !== void 0 && c.platform !== "instagram" && c.platform !== "tiktok") {
+    throw new ConfigError(`${where}.platform must be "instagram" or "tiktok"`);
+  }
+  const platform2 = c.platform === "tiktok" ? "tiktok" : "instagram";
+  if (!isNonEmptyString(c.media_id)) {
+    throw new ConfigError(`${where}.media_id is required`);
+  }
+  if (!Array.isArray(c.keywords) || c.keywords.length === 0 || !c.keywords.every(isNonEmptyString)) {
+    throw new ConfigError(`${where}.keywords must be a non-empty array of strings`);
+  }
+  if (c.exclude !== void 0 && (!Array.isArray(c.exclude) || !c.exclude.every(isNonEmptyString))) {
+    throw new ConfigError(`${where}.exclude must be an array of strings`);
+  }
+  const reward = c.reward;
+  if (!reward || !["link", "code", "text"].includes(reward.type) || !isNonEmptyString(reward.value)) {
+    throw new ConfigError(`${where}.reward must be { type: link|code|text, value: string }`);
+  }
+  const copy = c.copy;
+  if (!copy || !isNonEmptyString(copy.opening) || !isNonEmptyString(copy.delivery)) {
+    throw new ConfigError(`${where}.copy.opening and copy.delivery are required`);
+  }
+  if (c.deliver_in_opening !== void 0 && typeof c.deliver_in_opening !== "boolean") {
+    throw new ConfigError(`${where}.deliver_in_opening must be a boolean`);
+  }
+  if (c.deliver_in_opening && (c.check_follow || c.ask_email)) {
+    throw new ConfigError(
+      `${where}.deliver_in_opening cannot be combined with check_follow or ask_email \u2014 both need the tap flow`
+    );
+  }
+  if (c.public_reply !== void 0) {
+    const pr = c.public_reply;
+    if (typeof pr.enabled !== "boolean") {
+      throw new ConfigError(`${where}.public_reply.enabled must be a boolean`);
+    }
+    if (pr.enabled && (!Array.isArray(pr.texts) || pr.texts.length === 0 || !pr.texts.every(isNonEmptyString))) {
+      throw new ConfigError(`${where}.public_reply.texts must be a non-empty array when enabled`);
+    }
+  }
+  return {
+    campaign_id: c.campaign_id,
+    platform: platform2,
+    name: typeof c.name === "string" ? c.name : void 0,
+    media_id: c.media_id,
+    keywords: c.keywords,
+    exclude: c.exclude ?? [],
+    public_reply: c.public_reply,
+    like_comment: Boolean(c.like_comment),
+    check_follow: Boolean(c.check_follow),
+    verify_follow_count: Boolean(c.verify_follow_count),
+    ask_email: Boolean(c.ask_email),
+    deliver_in_opening: Boolean(c.deliver_in_opening),
+    reward: { type: reward.type, value: reward.value },
+    copy
+  };
+}
+__name(validateCampaign, "validateCampaign");
+function validateConfig(input) {
+  if (typeof input !== "object" || input === null) {
+    throw new ConfigError("config must be an object");
+  }
+  const cfg = input;
+  if (!Array.isArray(cfg.campaigns) || cfg.campaigns.length === 0) {
+    throw new ConfigError("config.campaigns must be a non-empty array");
+  }
+  const campaigns = cfg.campaigns.map((c, i) => validateCampaign(c, i));
+  const ids = /* @__PURE__ */ new Set();
+  for (const c of campaigns) {
+    if (ids.has(c.campaign_id)) throw new ConfigError(`duplicate campaign_id: ${c.campaign_id}`);
+    ids.add(c.campaign_id);
+  }
+  const mode = cfg.mode === "webhook" ? "webhook" : "polling";
+  const interval = typeof cfg.poll_interval_seconds === "number" && cfg.poll_interval_seconds > 0 ? cfg.poll_interval_seconds : 90;
+  return { mode, poll_interval_seconds: interval, campaigns };
+}
+__name(validateConfig, "validateConfig");
+
+// src/db.ts
+function now() {
+  return Math.floor(Date.now() / 1e3);
+}
+__name(now, "now");
+async function getActiveCampaigns(db, platform2 = "instagram") {
+  const rows = await db.prepare("SELECT config_json FROM campaigns WHERE active = 1 AND archived_at IS NULL AND platform = ?").bind(platform2).all();
+  const out = [];
+  for (const r of rows.results ?? []) {
+    try {
+      out.push(validateCampaign(JSON.parse(r.config_json)));
+    } catch {
+    }
+  }
+  return out;
+}
+__name(getActiveCampaigns, "getActiveCampaigns");
+async function getCampaign(db, campaignId) {
+  const row = await db.prepare("SELECT config_json FROM campaigns WHERE campaign_id = ?").bind(campaignId).first();
+  if (!row) return null;
+  try {
+    return validateCampaign(JSON.parse(row.config_json));
+  } catch {
+    return null;
+  }
+}
+__name(getCampaign, "getCampaign");
+async function getAllCampaigns(db, opts = {}) {
+  const where = opts.archived ? "archived_at IS NOT NULL" : "archived_at IS NULL";
+  const rows = await db.prepare(`SELECT config_json, active, updated_at, archived_at FROM campaigns WHERE ${where} ORDER BY updated_at DESC`).all();
+  const out = [];
+  for (const r of rows.results ?? []) {
+    try {
+      out.push({
+        campaign: validateCampaign(JSON.parse(r.config_json)),
+        active: r.active === 1,
+        archived: r.archived_at != null,
+        updated_at: r.updated_at
+      });
+    } catch {
+    }
+  }
+  return out;
+}
+__name(getAllCampaigns, "getAllCampaigns");
+async function setCampaignActive(db, campaignId, active) {
+  await db.prepare("UPDATE campaigns SET active = ?, updated_at = ? WHERE campaign_id = ?").bind(active ? 1 : 0, now(), campaignId).run();
+}
+__name(setCampaignActive, "setCampaignActive");
+async function setCampaignArchived(db, campaignId, archived) {
+  await db.prepare("UPDATE campaigns SET archived_at = ?, updated_at = ? WHERE campaign_id = ?").bind(archived ? now() : null, now(), campaignId).run();
+}
+__name(setCampaignArchived, "setCampaignArchived");
+async function deleteCampaign(db, campaignId) {
+  await db.batch([
+    db.prepare("DELETE FROM campaigns WHERE campaign_id = ?").bind(campaignId),
+    db.prepare("DELETE FROM conversations WHERE campaign_id = ?").bind(campaignId),
+    db.prepare("DELETE FROM processed_comments WHERE campaign_id = ?").bind(campaignId),
+    db.prepare("DELETE FROM events WHERE campaign_id = ?").bind(campaignId)
+  ]);
+}
+__name(deleteCampaign, "deleteCampaign");
+async function upsertCampaign(db, campaign, active = true) {
+  await db.prepare(
+    `INSERT INTO campaigns (campaign_id, platform, media_id, config_json, active, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(campaign_id) DO UPDATE SET
+         platform = excluded.platform,
+         media_id = excluded.media_id,
+         config_json = excluded.config_json,
+         active = excluded.active,
+         updated_at = excluded.updated_at`
+  ).bind(campaign.campaign_id, campaign.platform ?? "instagram", campaign.media_id, JSON.stringify(campaign), active ? 1 : 0, now()).run();
+}
+__name(upsertCampaign, "upsertCampaign");
+async function isCommentProcessed(db, commentId) {
+  const row = await db.prepare("SELECT 1 FROM processed_comments WHERE comment_id = ?").bind(commentId).first();
+  return row !== null;
+}
+__name(isCommentProcessed, "isCommentProcessed");
+async function processedCommentIds(db, commentIds) {
+  const found = /* @__PURE__ */ new Set();
+  const CHUNK = 100;
+  for (let i = 0; i < commentIds.length; i += CHUNK) {
+    const chunk = commentIds.slice(i, i + CHUNK);
+    if (chunk.length === 0) continue;
+    const placeholders = chunk.map(() => "?").join(",");
+    const res = await db.prepare(`SELECT comment_id FROM processed_comments WHERE comment_id IN (${placeholders})`).bind(...chunk).all();
+    for (const row of res.results ?? []) found.add(row.comment_id);
+  }
+  return found;
+}
+__name(processedCommentIds, "processedCommentIds");
+async function logEvents(db, entries) {
+  if (entries.length === 0) return;
+  const ts = now();
+  await db.batch(
+    entries.map(
+      (e) => db.prepare(`INSERT INTO events (campaign_id, igsid, type, created_at) VALUES (?, ?, ?, ?)`).bind(e.campaignId, e.igsid, e.type, ts)
+    )
+  );
+}
+__name(logEvents, "logEvents");
+async function markCommentProcessed(db, commentId, igsid, campaignId) {
+  await db.prepare(
+    `INSERT OR IGNORE INTO processed_comments (comment_id, igsid, campaign_id, created_at)
+       VALUES (?, ?, ?, ?)`
+  ).bind(commentId, igsid, campaignId, now()).run();
+}
+__name(markCommentProcessed, "markCommentProcessed");
+async function claimSend(db, key) {
+  const res = await db.prepare(`INSERT OR IGNORE INTO send_claims (key, created_at) VALUES (?, ?)`).bind(key, now()).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+__name(claimSend, "claimSend");
+async function releaseSend(db, key) {
+  await db.prepare(`DELETE FROM send_claims WHERE key = ?`).bind(key).run();
+}
+__name(releaseSend, "releaseSend");
+async function claimCommentAction(db, commentId, action) {
+  const res = await db.prepare(
+    `INSERT OR IGNORE INTO comment_actions (comment_id, action, created_at) VALUES (?, ?, ?)`
+  ).bind(commentId, action, now()).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+__name(claimCommentAction, "claimCommentAction");
+async function getConversation(db, igsid, campaignId) {
+  return await db.prepare("SELECT * FROM conversations WHERE igsid = ? AND campaign_id = ?").bind(igsid, campaignId).first();
+}
+__name(getConversation, "getConversation");
+async function getOpenConversations(db, igsid) {
+  const rows = await db.prepare("SELECT * FROM conversations WHERE igsid = ? AND state != 'DONE'").bind(igsid).all();
+  return rows.results ?? [];
+}
+__name(getOpenConversations, "getOpenConversations");
+async function createConversation(db, igsid, campaignId, username, state, conversationId = null) {
+  const ts = now();
+  await db.prepare(
+    `INSERT OR IGNORE INTO conversations
+         (igsid, campaign_id, state, username, followed, follow_retries, updated_at, created_at, conversation_id)
+       VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)`
+  ).bind(igsid, campaignId, state, username, ts, ts, conversationId).run();
+}
+__name(createConversation, "createConversation");
+async function updateConversation(db, igsid, campaignId, patch) {
+  const sets = [];
+  const binds = [];
+  if (patch.state !== void 0) {
+    sets.push("state = ?");
+    binds.push(patch.state);
+  }
+  if (patch.conversation_id !== void 0) {
+    sets.push("conversation_id = ?");
+    binds.push(patch.conversation_id);
+  }
+  if (patch.email !== void 0) {
+    sets.push("email = ?");
+    binds.push(patch.email);
+  }
+  if (patch.followed !== void 0) {
+    sets.push("followed = ?");
+    binds.push(patch.followed);
+  }
+  if (patch.follow_retries !== void 0) {
+    sets.push("follow_retries = ?");
+    binds.push(patch.follow_retries);
+  }
+  if (sets.length === 0) return;
+  sets.push("updated_at = ?");
+  binds.push(now(), igsid, campaignId);
+  await db.prepare(`UPDATE conversations SET ${sets.join(", ")} WHERE igsid = ? AND campaign_id = ?`).bind(...binds).run();
+}
+__name(updateConversation, "updateConversation");
+async function logEvent(db, campaignId, type, igsid) {
+  await db.prepare(`INSERT INTO events (campaign_id, igsid, type, created_at) VALUES (?, ?, ?, ?)`).bind(campaignId, igsid, type, now()).run();
+}
+__name(logEvent, "logEvent");
+async function countEventsGlobal(db, type, sinceTs) {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM events WHERE type = ? AND created_at >= ?`).bind(type, sinceTs).first();
+  return row?.n ?? 0;
+}
+__name(countEventsGlobal, "countEventsGlobal");
+async function eventCountsByType(db, campaignId, sinceTs) {
+  const base = {
+    comment_matched: 0,
+    opening_sent: 0,
+    button_clicked: 0,
+    follow_confirmed: 0,
+    email_captured: 0,
+    delivered: 0
+  };
+  const rows = campaignId ? await db.prepare(
+    `SELECT type, COUNT(*) AS n FROM events WHERE campaign_id = ? AND created_at >= ? GROUP BY type`
+  ).bind(campaignId, sinceTs).all() : await db.prepare(`SELECT type, COUNT(*) AS n FROM events WHERE created_at >= ? GROUP BY type`).bind(sinceTs).all();
+  for (const r of rows.results ?? []) {
+    if (r.type in base) base[r.type] = r.n;
+  }
+  return base;
+}
+__name(eventCountsByType, "eventCountsByType");
+async function listConversations(db, campaignId, limit = 500) {
+  const rows = campaignId ? await db.prepare("SELECT * FROM conversations WHERE campaign_id = ? ORDER BY updated_at DESC LIMIT ?").bind(campaignId, limit).all() : await db.prepare("SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ?").bind(limit).all();
+  return rows.results ?? [];
+}
+__name(listConversations, "listConversations");
+async function getAuth(db) {
+  return await db.prepare("SELECT * FROM auth WHERE id = 1").first();
+}
+__name(getAuth, "getAuth");
+async function saveAuth(db, fields) {
+  await db.prepare(
+    `INSERT INTO auth (id, access_token, ig_user_id, username, account_type, profile_picture_url, expires_at, refreshed_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         access_token = excluded.access_token,
+         ig_user_id = COALESCE(excluded.ig_user_id, auth.ig_user_id),
+         username = COALESCE(excluded.username, auth.username),
+         account_type = COALESCE(excluded.account_type, auth.account_type),
+         profile_picture_url = COALESCE(excluded.profile_picture_url, auth.profile_picture_url),
+         expires_at = excluded.expires_at,
+         refreshed_at = excluded.refreshed_at`
+  ).bind(
+    fields.access_token,
+    fields.ig_user_id ?? null,
+    fields.username ?? null,
+    fields.account_type ?? null,
+    fields.profile_picture_url ?? null,
+    fields.expires_at,
+    now()
+  ).run();
+}
+__name(saveAuth, "saveAuth");
+async function clearAuth(db) {
+  await db.prepare("DELETE FROM auth WHERE id = 1").run();
+}
+__name(clearAuth, "clearAuth");
+async function getTikTokAuth(db) {
+  return await db.prepare("SELECT * FROM tiktok_auth WHERE id = 1").first();
+}
+__name(getTikTokAuth, "getTikTokAuth");
+async function saveTikTokAuth(db, fields) {
+  await db.prepare(
+    `INSERT INTO tiktok_auth (id, access_token, refresh_token, business_id, username, display_name, profile_image, scope, expires_at, refresh_expires_at, refreshed_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         access_token = excluded.access_token,
+         refresh_token = excluded.refresh_token,
+         business_id = excluded.business_id,
+         username = COALESCE(excluded.username, tiktok_auth.username),
+         display_name = COALESCE(excluded.display_name, tiktok_auth.display_name),
+         profile_image = COALESCE(excluded.profile_image, tiktok_auth.profile_image),
+         scope = COALESCE(excluded.scope, tiktok_auth.scope),
+         expires_at = excluded.expires_at,
+         refresh_expires_at = excluded.refresh_expires_at,
+         refreshed_at = excluded.refreshed_at`
+  ).bind(
+    fields.access_token,
+    fields.refresh_token,
+    fields.business_id,
+    fields.username ?? null,
+    fields.display_name ?? null,
+    fields.profile_image ?? null,
+    fields.scope ?? null,
+    fields.expires_at,
+    fields.refresh_expires_at,
+    now()
+  ).run();
+}
+__name(saveTikTokAuth, "saveTikTokAuth");
+async function clearTikTokAuth(db) {
+  await db.prepare("DELETE FROM tiktok_auth WHERE id = 1").run();
+}
+__name(clearTikTokAuth, "clearTikTokAuth");
+async function kvGet(db, key) {
+  const row = await db.prepare("SELECT value FROM kv WHERE key = ?").bind(key).first();
+  return row?.value ?? null;
+}
+__name(kvGet, "kvGet");
+async function kvSet(db, key, value) {
+  await db.prepare(
+    `INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).bind(key, value, now()).run();
+}
+__name(kvSet, "kvSet");
+async function claimPollSlot(db, intervalSeconds) {
+  const ts = now();
+  await db.prepare(`INSERT OR IGNORE INTO kv (key, value, updated_at) VALUES ('last_poll_ts', '0', ?)`).bind(ts).run();
+  const res = await db.prepare(`UPDATE kv SET value = ?, updated_at = ? WHERE key = 'last_poll_ts' AND CAST(value AS INTEGER) <= ?`).bind(String(ts), ts, ts - intervalSeconds).run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+__name(claimPollSlot, "claimPollSlot");
+
+// src/engine/engine.ts
+var OPENING_PAYLOAD = "OPENING_TAP";
+var FOLLOW_PAYLOAD = "FOLLOW_CONFIRM";
+function pickRotating(texts, seed) {
+  let h = 0;
+  for (const ch of seed) h = h * 31 + ch.charCodeAt(0) >>> 0;
+  return texts[h % texts.length];
+}
+__name(pickRotating, "pickRotating");
+var Engine = class {
+  constructor(db, client, queue) {
+    this.db = db;
+    this.client = client;
+    this.queue = queue;
+  }
+  db;
+  client;
+  queue;
+  static {
+    __name(this, "Engine");
+  }
+  // ---- comments ----
+  /**
+   * Handle a new comment: trigger match → public actions → opening DM. Idempotent per comment.
+   * `activeCampaigns` may be passed by the poller (already fetched) to avoid a DB read per comment;
+   * the webhook path omits it and we fetch on demand.
+   */
+  async handleComment(evt, activeCampaigns) {
+    if (this.rateLimited) return;
+    if (await isCommentProcessed(this.db, evt.comment_id)) return;
+    if (!evt.igsid) return;
+    const all = activeCampaigns ?? await getActiveCampaigns(this.db);
+    const campaigns = all.filter((c) => c.media_id === evt.media_id);
+    let matchedCampaignId = "-";
+    let pendingRetry = false;
+    for (const campaign of campaigns) {
+      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      matchedCampaignId = campaign.campaign_id;
+      const existing = await getConversation(this.db, evt.igsid, campaign.campaign_id);
+      if (existing) continue;
+      this.lastRefusal = null;
+      const sent = await this.sendOpening(campaign, evt);
+      if (!sent) {
+        if (!this.rateLimited && isPermanentRefusal(this.lastRefusal)) {
+          const r = this.lastRefusal;
+          matchedCampaignId = `refused:${campaign.campaign_id}:${r.code ?? ""}/${r.subcode ?? ""}`;
+          console.warn(`[chatmany] permanent refusal for comment ${evt.comment_id}; not retrying: ${r.message}`);
+          await this.sendRefusalFallback(campaign, evt);
+          continue;
+        }
+        pendingRetry = true;
+        continue;
+      }
+      await this.runPublicActions(campaign, evt);
+    }
+    if (!pendingRetry) await markCommentProcessed(this.db, evt.comment_id, evt.igsid, matchedCampaignId);
+  }
+  /**
+   * Instagram refuses a private reply to most non-followers (code 100 / subcode 2534001). Those
+   * people can still be reached if THEY message us first, so leave a public reply under their
+   * comment asking for a DM. Guarded by the comment_actions ledger: once per comment, ever.
+   */
+  async sendRefusalFallback(campaign, evt) {
+    const text = REFUSAL_FALLBACK_TEXT.replaceAll("{keyword}", campaign.keywords[0] ?? "");
+    if (!text) return;
+    if (!await claimCommentAction(this.db, evt.comment_id, "refusal_fallback")) return;
+    await this.trySend(() => this.client.replyToComment(evt.comment_id, text), "refusal_fallback");
+  }
+  /**
+   * Someone DMed us a campaign keyword (usually after the fallback reply above): answer with the
+   * reward. This is the Send API, not a private reply, so it works regardless of follow status.
+   * One send per person per campaign; the conversation row is the dedupe.
+   */
+  async handleInboundKeyword(evt) {
+    if (this.rateLimited || !evt.igsid || !evt.text) return;
+    const all = await getActiveCampaigns(this.db);
+    const matching = all.filter((c) => c.deliver_in_opening && commentTriggers(evt.text, c.keywords, c.exclude));
+    if (matching.length === 0) return;
+    for (const c of matching) {
+      if (await getConversation(this.db, evt.igsid, c.campaign_id)) return;
+    }
+    const campaign = matching[0];
+    const sent = await this.trySend(
+      () => this.client.sendText(evt.igsid, renderDelivery(campaign)),
+      "inbound_keyword",
+      `inbound:${campaign.campaign_id}:${evt.igsid}`
+    );
+    if (!sent) return;
+    await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "DONE");
+    await logEvents(this.db, [
+      { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+      { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid },
+      { campaignId: campaign.campaign_id, type: "delivered", igsid: evt.igsid }
+    ]);
+  }
+  async runPublicActions(campaign, evt) {
+    if (campaign.public_reply?.enabled && campaign.public_reply.texts.length > 0) {
+      if (await claimCommentAction(this.db, evt.comment_id, "public_reply")) {
+        const text = pickRotating(campaign.public_reply.texts, evt.comment_id);
+        await this.trySend(() => this.client.replyToComment(evt.comment_id, text), "public_reply");
+      }
+    }
+  }
+  /**
+   * Open the chat via a private reply to the comment, using a postback button (Step 1).
+   * Returns true if the opening was sent and the funnel entry recorded; false on a send failure
+   * (so the caller leaves the comment unprocessed for a retry on the next poll).
+   */
+  async sendOpening(campaign, evt) {
+    if (campaign.deliver_in_opening) {
+      const text = renderDelivery(campaign);
+      const ok2 = await this.trySend(
+        () => this.client.privateReplyText(evt.comment_id, text),
+        "opening_direct",
+        `opening:${campaign.campaign_id}:${evt.comment_id}`
+      );
+      if (!ok2) return false;
+      await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "DONE");
+      await logEvents(this.db, [
+        { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+        { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid },
+        { campaignId: campaign.campaign_id, type: "delivered", igsid: evt.igsid }
+      ]);
+      return true;
+    }
+    const button = {
+      type: "postback",
+      title: campaign.copy.opening_button ?? "Continue",
+      payload: OPENING_PAYLOAD
+    };
+    const ok = await this.trySend(
+      () => this.client.privateReplyWithButtons(evt.comment_id, campaign.copy.opening, [button]),
+      "opening",
+      `opening:${campaign.campaign_id}:${evt.comment_id}`
+    );
+    if (!ok) return false;
+    await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "AWAITING_TAP");
+    await logEvents(this.db, [
+      { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+      { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid }
+    ]);
+    return true;
+  }
+  // ---- messages ----
+  /**
+   * Handle an inbound message: advance any of this person's open conversations. In polling mode
+   * the hidden payload is often unavailable, so taps are resolved by matching the message text to
+   * the expected button title for the current state (and, for AWAITING_TAP, any inbound message
+   * counts — the opening postback posts no visible text; webhook mode also delivers the payload).
+   */
+  async handleMessage(evt) {
+    await this.handleInboundKeyword(evt);
+    const open = await getOpenConversations(this.db, evt.igsid);
+    for (const convo of open) {
+      if (evt.timestamp <= convo.updated_at) continue;
+      const campaign = await getCampaign(this.db, convo.campaign_id);
+      if (!campaign) continue;
+      switch (convo.state) {
+        case "AWAITING_TAP":
+          await this.onTap(campaign, evt);
+          break;
+        case "AWAITING_FOLLOW":
+          await this.onFollow(campaign, evt, convo.follow_retries);
+          break;
+        case "AWAITING_EMAIL":
+          await this.onEmail(campaign, evt);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  async onTap(campaign, evt) {
+    await this.enterState(campaign, evt.igsid, afterTap(campaign), { entryEvent: "button_clicked" });
+  }
+  async onFollow(campaign, evt, retries) {
+    const expected = expectedTitleForState("AWAITING_FOLLOW", campaign) ?? "";
+    const isConfirm = evt.payload === FOLLOW_PAYLOAD || titleMatches(evt.text, expected);
+    if (!isConfirm) return;
+    if (campaign.verify_follow_count && !followRetriesExhausted(retries)) {
+      const looksFollowed = await this.followerCountGrew(campaign, evt.igsid);
+      if (!looksFollowed) {
+        await this.resendFollowGate(campaign, evt.igsid, retries);
+        return;
+      }
+    }
+    await this.enterState(campaign, evt.igsid, afterFollow(campaign), {
+      entryEvent: "follow_confirmed",
+      patch: { followed: 1 }
+    });
+  }
+  async onEmail(campaign, evt) {
+    const email = evt.email ?? extractEmail(evt.text);
+    if (!email) {
+      await this.resendEmailAsk(campaign, evt.igsid);
+      return;
+    }
+    await this.enterState(campaign, evt.igsid, "DELIVER", { entryEvent: "email_captured", patch: { email } });
+  }
+  async resendEmailAsk(campaign, igsid) {
+    const ok = await this.trySend(
+      () => this.client.sendQuickReplies(
+        igsid,
+        campaign.copy.email_ask ?? "Tap your email or reply with it \u{1F447}",
+        [{ content_type: "user_email" }]
+      ),
+      "email_ask_resend"
+    );
+    if (ok) {
+      await updateConversation(this.db, igsid, campaign.campaign_id, { state: "AWAITING_EMAIL" });
+    }
+  }
+  /**
+   * Enter a target state: perform the outbound send first, then — only if it succeeded — persist
+   * the new state together with any field patch and log the entry event, in that single write. A
+   * failed send changes nothing (no state, no updated_at bump, no event), so the triggering message
+   * re-fires on the next poll and the entry event is never double-counted. DELIVER collapses to DONE.
+   */
+  async enterState(campaign, igsid, target, opts = {}) {
+    const commit = /* @__PURE__ */ __name(async (restingState, extra) => {
+      await updateConversation(this.db, igsid, campaign.campaign_id, { state: restingState, ...opts.patch });
+      if (opts.entryEvent) await logEvent(this.db, campaign.campaign_id, opts.entryEvent, igsid);
+      if (extra) await logEvent(this.db, campaign.campaign_id, extra, igsid);
+    }, "commit");
+    switch (target) {
+      case "AWAITING_FOLLOW": {
+        const ok = await this.trySend(
+          () => this.client.sendQuickReplies(igsid, campaign.copy.follow_gate ?? "Follow us first \u{1F64C}", [
+            { content_type: "text", title: campaign.copy.follow_button ?? "\u2705 I followed", payload: FOLLOW_PAYLOAD }
+          ]),
+          "follow_gate",
+          `follow_gate:${campaign.campaign_id}:${igsid}`
+        );
+        if (!ok) return;
+        if (campaign.verify_follow_count) await this.captureFollowerBaseline(campaign, igsid);
+        await commit("AWAITING_FOLLOW");
+        break;
+      }
+      case "AWAITING_EMAIL": {
+        const ok = await this.trySend(
+          () => this.client.sendQuickReplies(
+            igsid,
+            campaign.copy.email_ask ?? "Tap your email or reply with it \u{1F447}",
+            [{ content_type: "user_email" }]
+          ),
+          "email_ask",
+          `email_ask:${campaign.campaign_id}:${igsid}`
+        );
+        if (!ok) return;
+        await commit("AWAITING_EMAIL");
+        break;
+      }
+      case "DELIVER": {
+        const text = renderDelivery(campaign);
+        const ok = await this.trySend(
+          () => this.client.sendText(igsid, text),
+          "delivery",
+          `delivery:${campaign.campaign_id}:${igsid}`
+        );
+        if (!ok) return;
+        await commit("DONE", "delivered");
+        break;
+      }
+      default:
+        await commit(target);
+    }
+  }
+  async resendFollowGate(campaign, igsid, retries) {
+    const ok = await this.trySend(
+      () => this.client.sendQuickReplies(igsid, campaign.copy.follow_gate ?? "Follow us first \u{1F64C}", [
+        { content_type: "text", title: campaign.copy.follow_button ?? "\u2705 I followed", payload: FOLLOW_PAYLOAD }
+      ]),
+      "follow_gate_resend"
+    );
+    if (ok) {
+      await updateConversation(this.db, igsid, campaign.campaign_id, { follow_retries: retries + 1 });
+    }
+  }
+  // ---- verify_follow_count helpers (weak heuristic) ----
+  baselineKey(campaign, igsid) {
+    return `follow_baseline:${campaign.campaign_id}:${igsid}`;
+  }
+  async captureFollowerBaseline(campaign, igsid) {
+    try {
+      const count3 = await this.client.getFollowersCount();
+      if (count3 !== void 0) await kvSet(this.db, this.baselineKey(campaign, igsid), String(count3));
+    } catch {
+    }
+  }
+  async followerCountGrew(campaign, igsid) {
+    const baselineRaw = await kvGet(this.db, this.baselineKey(campaign, igsid));
+    if (baselineRaw === null) return true;
+    try {
+      const current = await this.client.getFollowersCount();
+      if (current === void 0) return true;
+      return current > Number(baselineRaw);
+    } catch {
+      return true;
+    }
+  }
+  // ---- send helpers ----
+  /**
+   * Run a send through the queue, at most once per `key`.
+   *
+   * Sends are claimed before they go out. The outcome of a failed send is not always knowable:
+   * a timeout, dropped connection, or 5xx can all arrive *after* Instagram already delivered the
+   * message. Treating those as "never happened" and retrying is what shows a person the same DM
+   * twice, so instead:
+   *
+   *   - the platform answered with an error (any HTTP status) → the request reached Instagram and
+   *     was rejected, so nothing was delivered: release the claim and report failure so the caller
+   *     retries cleanly on the next poll;
+   *   - no answer at all (network error, timeout, dropped connection) → we never learned the
+   *     outcome and it may well have landed, so keep the claim and report success, advancing the
+   *     funnel rather than risking a duplicate;
+   *   - claim already held → a previous attempt got far enough to send, so skip and report
+   *     success. This is what catches a retry after the Worker died mid-send.
+   *
+   * The trade is deliberate: at-most-once delivery. A genuinely lost message leaves that person
+   * where they were instead of being messaged again.
+   */
+  async trySend(fn, label, key) {
+    const claimKey = key ?? null;
+    if (claimKey && !await claimSend(this.db, claimKey)) {
+      console.warn(`[chatmany] skipping ${label}: already attempted, may have delivered (${claimKey})`);
+      return true;
+    }
+    this.sendsThisRun = (this.sendsThisRun ?? 0) + 1;
+    try {
+      await this.queue.run(fn);
+      return true;
+    } catch (e) {
+      const refused = e instanceof InstagramApiError && !isAmbiguousFailure(e);
+      if (refused) {
+        this.lastRefusal = e;
+        if (e.isRateLimit) this.rateLimited = true;
+        if (claimKey) await releaseSend(this.db, claimKey);
+        console.warn(`[chatmany] send failed (${label}), will retry: ${msg(e)}`);
+        return false;
+      }
+      console.warn(
+        `[chatmany] send outcome unknown (${label}): ${msg(e)} \u2014 treating as delivered so it is not sent twice`
+      );
+      return claimKey ? true : false;
+    }
+  }
+};
+function msg(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+__name(msg, "msg");
+function isPermanentRefusal(e) {
+  if (!(e instanceof InstagramApiError) || e.isRateLimit) return false;
+  if (!(e.status >= 400 && e.status < 500)) return false;
+  if (e.subcode === 2534001 || e.code === 10 || e.code === 551) return true;
+  return e.code === 100 && /cannot be found|does not exist|not available/i.test(e.message ?? "");
+}
+__name(isPermanentRefusal, "isPermanentRefusal");
+function isAmbiguousFailure(e) {
+  if (e.isRateLimit) return false;
+  return e.status >= 500 || e.code === 1 || e.code === 2;
+}
+__name(isAmbiguousFailure, "isAmbiguousFailure");
+function renderDelivery(campaign) {
+  return campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
+}
+__name(renderDelivery, "renderDelivery");
+
+// src/runtime.ts
+async function buildRuntime(env2) {
+  const auth = await getAuth(env2.DB);
+  if (!auth) {
+    console.warn("[chatmany] no Instagram account connected; skipping.");
+    return null;
+  }
+  if (auth.expires_at <= now()) {
+    console.warn("[chatmany] access token expired; owner must reconnect. Skipping.");
+    return null;
+  }
+  const igUserId = auth.ig_user_id ?? "me";
+  const client = new InstagramClient(auth.access_token, env2.GRAPH_VERSION, igUserId);
+  const queue = new SendQueue();
+  const engine = new Engine(env2.DB, client, queue);
+  return { client, queue, engine, auth, igUserId };
+}
+__name(buildRuntime, "buildRuntime");
+function toUnixSeconds(iso) {
+  if (!iso) return now();
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? now() : Math.floor(ms / 1e3);
+}
+__name(toUnixSeconds, "toUnixSeconds");
+
+// src/poller/commentPoll.ts
+var OPENING_CAP_PER_HOUR = 750;
+var HEAD_MAX_PAGES = 5;
+var SWEEP_PAGES_PER_RUN = 8;
+var MAX_SENDS_PER_RUN = 30;
+var INBOX_PAGES_PER_RUN = 6;
+var REFUSAL_FALLBACK_TEXT = "ig won't let me dm you first 😭 dm me the word {keyword} and i'll send the link";
+var RUN_BUDGET_MS = 8 * 60 * 1e3;
+var RATE_LIMIT_COOLDOWN_SECONDS = 600;
+var PRIVATE_REPLY_WINDOW_SECONDS = 7 * 86400 - 3600;
+var COMMENT_FIELDS = "id,text,timestamp,username,from{id,username},replies.limit(50){id,text,timestamp,username,from{id,username}}";
+async function fetchCommentPage(rt, mediaId, after) {
+  const params = { fields: COMMENT_FIELDS, limit: "100" };
+  if (after) params.after = after;
+  try {
+    return await rt.client.get(`/${mediaId}/comments`, params);
+  } catch (e) {
+    console.warn(`[chatmany] getComments(${mediaId}) failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+}
+async function handleCommentPage(rt, db, mediaId, campaigns, res, startedAt) {
+  const comments = [];
+  for (const c of res?.data ?? []) {
+    comments.push(c);
+    for (const r of c.replies?.data ?? []) comments.push(r);
+  }
+  let alreadyHandled;
+  try {
+    alreadyHandled = await processedCommentIds(db, comments.map((c) => c.id));
+  } catch (e) {
+    console.warn(`[chatmany] processedCommentIds failed: ${e instanceof Error ? e.message : e}`);
+    return { fresh: 0, stop: "error", oldest: now() };
+  }
+  let fresh = 0;
+  let oldest = now();
+  for (const c of comments) {
+    const ts = toUnixSeconds(c.timestamp);
+    if (ts < oldest) oldest = ts;
+    if (alreadyHandled.has(c.id)) continue;
+    const seen = rt.engine.attemptedThisRun ??= /* @__PURE__ */ new Set();
+    if (seen.has(c.id)) continue;
+    const igsid = c.from?.id;
+    if (!igsid || igsid === rt.client.igUserId) continue;
+    if (now() - ts > PRIVATE_REPLY_WINDOW_SECONDS) continue;
+    fresh++;
+    seen.add(c.id);
+    await rt.engine.handleComment({
+      kind: "comment",
+      comment_id: c.id,
+      igsid,
+      username: c.from?.username ?? c.username,
+      text: c.text ?? "",
+      media_id: mediaId,
+      timestamp: ts
+    }, campaigns);
+    if (rt.engine.rateLimited) {
+      await kvSet(db, "rate_limited_until", String(now() + RATE_LIMIT_COOLDOWN_SECONDS));
+      console.warn(`[chatmany] Instagram rate limit hit; pausing comment polling for ${RATE_LIMIT_COOLDOWN_SECONDS}s.`);
+      return { fresh, stop: "rate", oldest };
+    }
+    if ((rt.engine.sendsThisRun ?? 0) >= MAX_SENDS_PER_RUN || Date.now() - startedAt > RUN_BUDGET_MS) return { fresh, stop: "budget", oldest };
+  }
+  return { fresh, stop: null, oldest };
+}
+async function pollComments(rt, db) {
+  const cooldownUntil = Number(await kvGet(db, "rate_limited_until") ?? 0);
+  if (cooldownUntil > now()) {
+    console.warn(`[chatmany] Instagram rate-limit cooldown, ${cooldownUntil - now()}s left; skipping comment poll.`);
+    return;
+  }
+  const campaigns = await getActiveCampaigns(db);
+  if (campaigns.length === 0) return;
+  const sinceHour = now() - 3600;
+  const openingsThisHour = await countEventsGlobal(db, "opening_sent", sinceHour);
+  if (openingsThisHour >= OPENING_CAP_PER_HOUR) {
+    console.warn(`[chatmany] opening cap reached (${openingsThisHour}/hr); deferring comment poll.`);
+    return;
+  }
+  const startedAt = Date.now();
+  const mediaIds = [...new Set(campaigns.map((c) => c.media_id))].sort();
+  for (const mediaId of mediaIds) {
+    let after;
+    for (let page = 0; page < HEAD_MAX_PAGES; page++) {
+      const res = await fetchCommentPage(rt, mediaId, after);
+      if (!res) break;
+      const out = await handleCommentPage(rt, db, mediaId, campaigns, res, startedAt);
+      if (out.stop === "rate" || out.stop === "budget") return;
+      after = res.paging?.cursors?.after;
+      if (out.stop || out.fresh === 0 || !res.paging?.next || !after || now() - out.oldest > PRIVATE_REPLY_WINDOW_SECONDS) break;
+    }
+  }
+  let idx = Number(await kvGet(db, "sweep_media_idx") ?? 0);
+  if (!(idx >= 0 && idx < mediaIds.length)) idx = 0;
+  const mediaId = mediaIds[idx];
+  const cursorKey = `sweep_cursor:${mediaId}`;
+  let cursor = await kvGet(db, cursorKey) || void 0;
+  for (let page = 0; page < SWEEP_PAGES_PER_RUN; page++) {
+    const res = await fetchCommentPage(rt, mediaId, cursor);
+    if (!res) break;
+    const out = await handleCommentPage(rt, db, mediaId, campaigns, res, startedAt);
+    if (out.stop) {
+      await kvSet(db, cursorKey, cursor ?? "");
+      return;
+    }
+    const next = res.paging?.cursors?.after;
+    const exhausted = !res.paging?.next || !next || now() - out.oldest > PRIVATE_REPLY_WINDOW_SECONDS;
+    if (exhausted) {
+      await kvSet(db, cursorKey, "");
+      await kvSet(db, "sweep_media_idx", String((idx + 1) % mediaIds.length));
+      return;
+    }
+    cursor = next;
+  }
+  await kvSet(db, cursorKey, cursor ?? "");
+}
+__name(pollComments, "pollComments");
+
+// src/poller/messagePoll.ts
+var CURSOR_KEY = "last_msg_poll_ts";
+var OVERLAP_SECONDS = 120;
+async function pollMessages(rt, db) {
+  const cursorRaw = await kvGet(db, CURSOR_KEY);
+  const cursor = cursorRaw ? Number(cursorRaw) : 0;
+  const floor = cursor > 0 ? cursor - OVERLAP_SECONDS : 0;
+  const conversations = [];
+  try {
+    let after;
+    for (let page = 0; page < INBOX_PAGES_PER_RUN; page++) {
+      const params = {
+        platform: "instagram",
+        fields: "id,updated_time,messages.limit(10){id,from,to,message,created_time}",
+        limit: "50"
+      };
+      if (after) params.after = after;
+      const res = await rt.client.get(`/${rt.igUserId}/conversations`, params);
+      const data = res?.data ?? [];
+      for (const c of data) conversations.push(c);
+      after = res?.paging?.cursors?.after;
+      const oldest = data.length ? toUnixSeconds(data[data.length - 1].updated_time) : 0;
+      if (!data.length || !res?.paging?.next || !after || oldest < floor) break;
+    }
+  } catch (e) {
+    console.warn(`[chatmany] getConversations failed: ${e instanceof Error ? e.message : e}`);
+    return;
+  }
+  let maxTs = cursor;
+  let stopped = false;
+  for (const convo of conversations) {
+    if (stopped) break;
+    for (const m of convo.messages?.data ?? []) {
+      if (rt.engine.rateLimited || (rt.engine.sendsThisRun ?? 0) >= MAX_SENDS_PER_RUN) {
+        stopped = true;
+        break;
+      }
+      const fromId = m.from?.id;
+      if (!fromId || fromId === rt.igUserId) continue;
+      const ts = toUnixSeconds(m.created_time);
+      if (ts < floor) continue;
+      if (ts > maxTs) maxTs = ts;
+      const evt = {
+        kind: "message",
+        igsid: fromId,
+        text: m.message,
+        timestamp: ts
+        // Polling does not expose the hidden quick-reply payload; the engine resolves taps by
+        // matching text to the expected button title for the conversation's state.
+      };
+      await rt.engine.handleMessage(evt);
+    }
+  }
+  if (stopped) {
+    if (rt.engine.rateLimited) {
+      await kvSet(db, "rate_limited_until", String(now() + RATE_LIMIT_COOLDOWN_SECONDS));
+      console.warn(`[chatmany] Instagram rate limit hit on inbound DMs; pausing ${RATE_LIMIT_COOLDOWN_SECONDS}s.`);
+    }
+    console.warn("[chatmany] inbound pass stopped early; leaving the cursor for the next run.");
+    return;
+  }
+  await kvSet(db, CURSOR_KEY, String(Math.max(maxTs, now() - OVERLAP_SECONDS)));
+}
+__name(pollMessages, "pollMessages");
+
+// src/auth/refresh.ts
+var DAY = 86400;
+var REFRESH_WHEN_WITHIN = 30 * DAY;
+var MIN_TOKEN_AGE = DAY + 3600;
+async function refreshTokenIfDue(env2) {
+  const auth = await getAuth(env2.DB);
+  if (!auth) return { status: "no_auth" };
+  const ts = now();
+  if (auth.expires_at <= ts) {
+    console.warn(
+      `[chatmany] access token EXPIRED at ${new Date(auth.expires_at * 1e3).toISOString()}; owner must reconnect Instagram.`
+    );
+    return { status: "expired" };
+  }
+  if (auth.expires_at - ts > REFRESH_WHEN_WITHIN) {
+    return { status: "skipped", expiresAt: auth.expires_at };
+  }
+  const lastSet = auth.refreshed_at ?? auth.expires_at - 60 * DAY;
+  if (ts - lastSet < MIN_TOKEN_AGE) {
+    return { status: "too_new", expiresAt: auth.expires_at };
+  }
+  try {
+    const { access_token, expires_in } = await refreshLongLivedToken(env2.GRAPH_VERSION, auth.access_token);
+    const expiresAt = now() + expires_in;
+    await saveAuth(env2.DB, { access_token, expires_at: expiresAt });
+    console.log(`[chatmany] token refreshed; new expiry ${new Date(expiresAt * 1e3).toISOString()}`);
+    return { status: "refreshed", expiresAt };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.warn(`[chatmany] token refresh FAILED (${detail}); expiry ${new Date(auth.expires_at * 1e3).toISOString()}`);
+    return { status: "error", detail, expiresAt: auth.expires_at };
+  }
+}
+__name(refreshTokenIfDue, "refreshTokenIfDue");
+
+// src/auth/oauth.ts
+var SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments"
+];
+function buildAuthorizeUrl(appId, redirectUri, state) {
+  const url = new URL("https://www.instagram.com/oauth/authorize");
+  url.searchParams.set("client_id", appId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", SCOPES.join(","));
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+__name(buildAuthorizeUrl, "buildAuthorizeUrl");
+async function exchangeCodeForShortLivedToken(appId, appSecret, redirectUri, code) {
+  const body = new URLSearchParams({
+    client_id: appId,
+    client_secret: appSecret,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+    code
+  });
+  const res = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const text = await res.text();
+  if (!res.ok) throw new InstagramApiError(`code exchange failed: ${text}`, res.status);
+  const json2 = JSON.parse(text);
+  return { accessToken: json2.access_token, userId: String(json2.user_id), permissions: json2.permissions };
+}
+__name(exchangeCodeForShortLivedToken, "exchangeCodeForShortLivedToken");
+async function exchangeForLongLivedToken(version2, appSecret, shortLivedToken) {
+  const url = new URL("https://graph.instagram.com/access_token");
+  url.searchParams.set("grant_type", "ig_exchange_token");
+  url.searchParams.set("client_secret", appSecret);
+  url.searchParams.set("access_token", shortLivedToken);
+  const res = await fetch(url.toString());
+  const text = await res.text();
+  if (!res.ok) throw new InstagramApiError(`long-lived exchange failed: ${text}`, res.status);
+  const json2 = JSON.parse(text);
+  return { accessToken: json2.access_token, expiresIn: json2.expires_in };
+}
+__name(exchangeForLongLivedToken, "exchangeForLongLivedToken");
+
+// src/routes/http.ts
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+__name(json, "json");
+function html(body, status = 200) {
+  return new Response(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem">${body}</body>`, {
+    status,
+    headers: { "content-type": "text/html; charset=utf-8" }
+  });
+}
+__name(html, "html");
+function redirect(location, status = 302) {
+  return new Response(null, { status, headers: { location } });
+}
+__name(redirect, "redirect");
+function isOwner(req, url, env2) {
+  if (!env2.OWNER_TOKEN) return false;
+  const header = req.headers.get("authorization") ?? "";
+  const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const supplied = bearer || url.searchParams.get("token") || "";
+  return timingSafeEqual(supplied, env2.OWNER_TOKEN);
+}
+__name(isOwner, "isOwner");
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+__name(timingSafeEqual, "timingSafeEqual");
+
+// src/routes/auth.ts
+var STATE_KEY = "oauth_state";
+function randomState() {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+__name(randomState, "randomState");
+async function handleAuthorize(env2) {
+  if (!env2.APP_ID || !env2.APP_SECRET) {
+    return json({ error: "APP_ID/APP_SECRET not configured" }, 500);
+  }
+  const state = randomState();
+  await kvSet(env2.DB, STATE_KEY, state);
+  return redirect(buildAuthorizeUrl(env2.APP_ID, env2.REDIRECT_URI, state));
+}
+__name(handleAuthorize, "handleAuthorize");
+async function handleCallback(env2, url) {
+  const error3 = url.searchParams.get("error");
+  if (error3) {
+    return html(`<h1>Connection cancelled</h1><p>${escapeHtml(error3)}</p>`, 400);
+  }
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code) return html("<h1>Missing authorization code</h1>", 400);
+  const expected = await kvGet(env2.DB, STATE_KEY);
+  if (!expected || state !== expected) return html("<h1>Invalid state (possible CSRF)</h1>", 400);
+  try {
+    const short = await exchangeCodeForShortLivedToken(env2.APP_ID, env2.APP_SECRET, env2.REDIRECT_URI, code);
+    console.log(`[chatmany] OAuth granted permissions: ${JSON.stringify(short.permissions ?? "none reported")}`);
+    const long = await exchangeForLongLivedToken(env2.GRAPH_VERSION, env2.APP_SECRET, short.accessToken);
+    const client = new InstagramClient(long.accessToken, env2.GRAPH_VERSION, "me");
+    const me = await client.getMe();
+    const accountType = (me.account_type ?? "").toUpperCase();
+    if (accountType === "PERSONAL") {
+      return html(
+        `<h1>Personal accounts aren't supported</h1>
+         <p>chatmany needs an Instagram <b>Professional</b> (Creator or Business) account.</p>
+         <p>In the Instagram app: <b>Settings \u2192 Account type and tools \u2192 Switch to professional account</b>, then reconnect.</p>`,
+        400
+      );
+    }
+    await saveAuth(env2.DB, {
+      access_token: long.accessToken,
+      expires_at: now() + long.expiresIn,
+      ig_user_id: me.user_id ?? short.userId,
+      username: me.username ?? null,
+      account_type: me.account_type ?? null,
+      profile_picture_url: me.profile_picture_url ?? null
+    });
+    return html(
+      `<h1>Connected \u2705</h1>
+       <p>@${escapeHtml(me.username ?? "your account")} is now connected to chatmany.</p>
+       <p>Token valid ~60 days; it auto-refreshes. You can close this tab.</p>`
+    );
+  } catch (e) {
+    return html(`<h1>Connection failed</h1><pre>${escapeHtml(e instanceof Error ? e.message : String(e))}</pre>`, 500);
+  }
+}
+__name(handleCallback, "handleCallback");
+async function handleStatus(env2) {
+  const auth = await getAuth(env2.DB);
+  if (!auth) return json({ connected: false });
+  return json({
+    connected: true,
+    username: auth.username,
+    account_type: auth.account_type,
+    profile_picture_url: auth.profile_picture_url,
+    ig_user_id: auth.ig_user_id,
+    expires_at: auth.expires_at,
+    expires_in_days: Math.max(0, Math.round((auth.expires_at - now()) / 86400))
+  });
+}
+__name(handleStatus, "handleStatus");
+async function handleDisconnect(env2) {
+  await clearAuth(env2.DB);
+  return json({ disconnected: true });
+}
+__name(handleDisconnect, "handleDisconnect");
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+__name(escapeHtml, "escapeHtml");
+
+// src/routes/config.ts
+async function handleConfigImport(env2, req) {
+  let payload;
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: "invalid JSON body" }, 400);
+  }
+  let cfg;
+  try {
+    cfg = validateConfig(payload);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  for (const campaign of cfg.campaigns) {
+    await upsertCampaign(env2.DB, campaign, true);
+  }
+  return json({ imported: cfg.campaigns.length, campaign_ids: cfg.campaigns.map((c) => c.campaign_id) });
+}
+__name(handleConfigImport, "handleConfigImport");
+async function handleConfigExport(env2) {
+  const campaigns = await getActiveCampaigns(env2.DB);
+  return json({ mode: env2.MODE, poll_interval_seconds: Number(env2.POLL_INTERVAL_SECONDS), campaigns });
+}
+__name(handleConfigExport, "handleConfigExport");
+
+// src/routes/webhook.ts
+function handleWebhookVerify(env2, url) {
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+  if (mode === "subscribe" && token && token === env2.WEBHOOK_VERIFY_TOKEN && challenge) {
+    return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } });
+  }
+  return new Response("forbidden", { status: 403 });
+}
+__name(handleWebhookVerify, "handleWebhookVerify");
+async function handleWebhookEvent(env2, req) {
+  const raw = await req.text();
+  const sig = req.headers.get("x-hub-signature-256");
+  if (!await verifySignature(env2.APP_SECRET, raw, sig)) {
+    return new Response("invalid signature", { status: 401 });
+  }
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return json({ error: "invalid JSON" }, 400);
+  }
+  const rt = await buildRuntime(env2);
+  if (!rt) return json({ ok: true, note: "no account connected" });
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      if (change.field !== "comments") continue;
+      const v = change.value;
+      const igsid = v.from?.id;
+      const mediaId = v.media?.id;
+      if (!igsid || !mediaId || !v.id) continue;
+      const evt = {
+        kind: "comment",
+        comment_id: v.id,
+        igsid,
+        username: v.from?.username,
+        text: v.text ?? "",
+        media_id: mediaId,
+        timestamp: toUnixSeconds(v.timestamp)
+      };
+      await rt.engine.handleComment(evt);
+    }
+    for (const m of entry.messaging ?? []) {
+      const igsid = m.sender?.id;
+      if (!igsid || igsid === rt.igUserId) continue;
+      const payload = m.postback?.payload ?? m.message?.quick_reply?.payload;
+      const evt = {
+        kind: "message",
+        igsid,
+        text: m.message?.text ?? m.postback?.title,
+        payload,
+        timestamp: m.timestamp ? Math.floor(m.timestamp / 1e3) : toUnixSeconds(void 0)
+      };
+      await rt.engine.handleMessage(evt);
+    }
+  }
+  return json({ ok: true });
+}
+__name(handleWebhookEvent, "handleWebhookEvent");
+async function verifySignature(appSecret, raw, header) {
+  if (!header || !header.startsWith("sha256=") || !appSecret) return false;
+  const expected = header.slice("sha256=".length);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(appSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const actual = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (actual.length !== expected.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < actual.length; i++) mismatch |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  return mismatch === 0;
+}
+__name(verifySignature, "verifySignature");
+
+// src/api/tiktok.ts
+var API_BASE = "https://business-api.tiktok.com/open_api/v1.3";
+var TT_CODE = {
+  OK: 0,
+  NO_PERMISSION: 40001,
+  PARAM_ERROR: 40002,
+  NOT_FOUND: 40007,
+  DM_BLOCKED: 40064,
+  // outside the 48h window or a cold conversation
+  RATE_LIMITED: 40100,
+  BAD_TOKEN: 40105,
+  SYSTEM_ERROR: 51065
+};
+var TikTokApiError = class extends Error {
+  constructor(message, status, code, requestId) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.requestId = requestId;
+    this.name = "TikTokApiError";
+  }
+  status;
+  code;
+  requestId;
+  static {
+    __name(this, "TikTokApiError");
+  }
+  get isRateLimit() {
+    return this.status === 429 || this.code === TT_CODE.RATE_LIMITED;
+  }
+  get isBadToken() {
+    return this.status === 401 || this.code === TT_CODE.BAD_TOKEN;
+  }
+};
+var COMMENT_REPLY_MAX = 150;
+var QA_TITLE_MAX = 40;
+var QA_BUTTON_MAX = 20;
+var TikTokClient = class {
+  constructor(accessToken, businessId) {
+    this.accessToken = accessToken;
+    this.businessId = businessId;
+  }
+  accessToken;
+  businessId;
+  static {
+    __name(this, "TikTokClient");
+  }
+  // ---- transport ----
+  async get(path, params) {
+    const url = new URL(`${API_BASE}${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const res = await fetch(url.toString(), { method: "GET", headers: { "Access-Token": this.accessToken } });
+    return this.parse(res, path);
+  }
+  async post(path, body) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Access-Token": this.accessToken, "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return this.parse(res, path);
+  }
+  async parse(res, path) {
+    const text = await res.text();
+    let json2;
+    try {
+      json2 = JSON.parse(text);
+    } catch {
+      throw new TikTokApiError(`TikTok ${path}: HTTP ${res.status} (unparseable body: ${text.slice(0, 200)})`, res.status);
+    }
+    if (!res.ok || json2.code !== TT_CODE.OK) {
+      throw new TikTokApiError(
+        `TikTok ${path}: code ${json2.code} ${json2.message ?? ""} (request_id ${json2.request_id ?? "?"})`.trim(),
+        res.status,
+        json2.code,
+        json2.request_id
+      );
+    }
+    return json2.data ?? {};
+  }
+  // ---- Accounts API: account + videos ----
+  /** GET /business/get/ — username, display name, avatar of the connected account. */
+  getProfile() {
+    return this.get("/business/get/", {
+      business_id: this.businessId,
+      fields: JSON.stringify(["username", "display_name", "profile_image"])
+    });
+  }
+  /** GET /business/video/list/ — the account's own posts, newest first (max_count ≤ 20 per page). */
+  async listVideos(maxCount = 20) {
+    const data = await this.get("/business/video/list/", {
+      business_id: this.businessId,
+      fields: JSON.stringify(["item_id", "media_type", "caption", "thumbnail_url", "share_url", "create_time", "comments", "likes", "video_views"]),
+      max_count: String(Math.min(20, Math.max(1, maxCount)))
+    });
+    return data.videos ?? [];
+  }
+  // ---- Accounts API: comments ----
+  /** GET /business/comment/list/ — top-level comments on an owned video, newest first (max_count ≤ 30). */
+  async listComments(videoId, maxCount = 30, cursor) {
+    const params = {
+      business_id: this.businessId,
+      video_id: videoId,
+      status: "ALL",
+      sort_field: "create_time",
+      sort_type: "desc",
+      max_count: String(Math.min(30, Math.max(1, maxCount)))
+    };
+    if (cursor !== void 0) params.cursor = String(cursor);
+    const data = await this.get("/business/comment/list/", params);
+    return { comments: data.comments ?? [], hasMore: Boolean(data.has_more), cursor: data.cursor };
+  }
+  /** GET /business/comment/list/ with comment_ids — fetch specific comments (≤30) by id, e.g. after a comment.update webhook. */
+  async getComments(videoId, commentIds) {
+    if (commentIds.length === 0) return [];
+    const data = await this.get("/business/comment/list/", {
+      business_id: this.businessId,
+      video_id: videoId,
+      comment_ids: JSON.stringify(commentIds.slice(0, 30)),
+      status: "ALL"
+    });
+    return data.comments ?? [];
+  }
+  /** POST /business/comment/reply/create/ — public reply under a comment (≤150 chars). */
+  replyToComment(videoId, commentId, text) {
+    return this.post("/business/comment/reply/create/", {
+      business_id: this.businessId,
+      video_id: videoId,
+      comment_id: commentId,
+      text: clip(text, COMMENT_REPLY_MAX)
+    });
+  }
+  // ---- Business Messaging API ----
+  /** POST /business/message/send/ — plain text into an existing conversation (≤6000 chars). */
+  sendText(conversationId, body) {
+    return this.post("/business/message/send/", {
+      business_id: this.businessId,
+      recipient_type: "CONVERSATION",
+      recipient: conversationId,
+      message_type: "TEXT",
+      text: { body }
+    });
+  }
+  /**
+   * POST /business/message/send/ — a Q&A button card: a question (≤40 chars) with 1–3 REPLY buttons
+   * (≤20 chars each). Tapping a button sends its label back as the person's message, and the
+   * inbound webhook carries our button `id` in reply_source_payload.reply_source_unique_id.
+   */
+  sendQaButtons(conversationId, title2, buttons) {
+    return this.post("/business/message/send/", {
+      business_id: this.businessId,
+      recipient_type: "CONVERSATION",
+      recipient: conversationId,
+      message_type: "TEMPLATE",
+      template: {
+        type: "QA_BUTTON_CARD",
+        title: clip(title2, QA_TITLE_MAX),
+        buttons: buttons.slice(0, 3).map((b) => ({ type: "REPLY", title: clip(b.title, QA_BUTTON_MAX), id: clip(b.id, 40) }))
+      }
+    });
+  }
+  /** GET /business/message/conversation/list/ — STRANGER (they wrote, we never replied) or SINGLE (we replied). Past 90 days, ≤100. */
+  async listConversations(type, limit = 100) {
+    const data = await this.get("/business/message/conversation/list/", {
+      business_id: this.businessId,
+      conversation_type: type,
+      limit: String(Math.min(100, Math.max(1, limit)))
+    });
+    return data.conversations ?? [];
+  }
+  /** GET /business/message/content/list/ — the 20 most recent messages of a conversation + participants. */
+  async listMessages(conversationId) {
+    const data = await this.get("/business/message/content/list/", {
+      business_id: this.businessId,
+      conversation_id: conversationId
+      // URLSearchParams encodes '+' as %2B, which the docs require
+    });
+    return { messages: data.messages ?? [], participants: data.participants ?? [] };
+  }
+};
+function clip(s, max) {
+  const chars = [...s];
+  return chars.length <= max ? s : chars.slice(0, max - 1).join("") + "\u2026";
+}
+__name(clip, "clip");
+var TIKTOK_SCOPES = [
+  "user.info.basic",
+  "user.info.username",
+  "user.account.type",
+  "video.list",
+  "comment.list",
+  "comment.list.manage",
+  "message.list.read",
+  "message.list.send",
+  "message.list.manage"
+];
+function buildTikTokAuthorizeUrl(appId, redirectUri, state, scopes = TIKTOK_SCOPES) {
+  const url = new URL("https://www.tiktok.com/v2/auth/authorize");
+  url.searchParams.set("client_key", appId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", scopes.join(","));
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+__name(buildTikTokAuthorizeUrl, "buildTikTokAuthorizeUrl");
+async function tokenCall(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body)
+  });
+  const text = await res.text();
+  let json2;
+  try {
+    json2 = JSON.parse(text);
+  } catch {
+    throw new TikTokApiError(`TikTok ${path}: HTTP ${res.status} (unparseable body)`, res.status);
+  }
+  if (!res.ok || json2.code !== TT_CODE.OK || !json2.data?.access_token) {
+    throw new TikTokApiError(`TikTok ${path}: code ${json2.code} ${json2.message ?? ""}`.trim(), res.status, json2.code, json2.request_id);
+  }
+  return json2.data;
+}
+__name(tokenCall, "tokenCall");
+function exchangeTikTokCode(appId, appSecret, redirectUri, code) {
+  return tokenCall("/tt_user/oauth2/token/", {
+    client_id: appId,
+    client_secret: appSecret,
+    grant_type: "authorization_code",
+    auth_code: code,
+    redirect_uri: redirectUri
+  });
+}
+__name(exchangeTikTokCode, "exchangeTikTokCode");
+function refreshTikTokToken(appId, appSecret, refreshToken) {
+  return tokenCall("/tt_user/oauth2/refresh_token/", {
+    client_id: appId,
+    client_secret: appSecret,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken
+  });
+}
+__name(refreshTikTokToken, "refreshTikTokToken");
+async function appCall(method, path, params) {
+  let res;
+  if (method === "GET") {
+    const url = new URL(`${API_BASE}${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+    res = await fetch(url.toString(), { headers: { accept: "application/json" } });
+  } else {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(params)
+    });
+  }
+  const text = await res.text();
+  let json2;
+  try {
+    json2 = JSON.parse(text);
+  } catch {
+    throw new TikTokApiError(`TikTok ${path}: HTTP ${res.status} (unparseable body)`, res.status);
+  }
+  if (!res.ok || json2.code !== TT_CODE.OK) {
+    throw new TikTokApiError(`TikTok ${path}: code ${json2.code} ${json2.message ?? ""}`.trim(), res.status, json2.code, json2.request_id);
+  }
+  return json2.data ?? {};
+}
+__name(appCall, "appCall");
+function subscribeTikTokWebhook(appId, appSecret, eventType, callbackUrl, itemList) {
+  const body = { app_id: appId, secret: appSecret, event_type: eventType, callback_url: callbackUrl };
+  if (eventType === "COMMENT" && itemList && itemList.length > 0) body.item_list = itemList;
+  return appCall("POST", "/business/webhook/update/", body);
+}
+__name(subscribeTikTokWebhook, "subscribeTikTokWebhook");
+function getTikTokWebhook(appId, appSecret, eventType) {
+  return appCall("GET", "/business/webhook/list/", { app_id: appId, secret: appSecret, event_type: eventType });
+}
+__name(getTikTokWebhook, "getTikTokWebhook");
+
+// src/engine/tiktokEngine.ts
+var TT_FOLLOW_PAYLOAD = "FOLLOW_CONFIRM";
+var DEFAULT_NUDGE = `DM me "{keyword}" and I'll send it over \u{1F4E9}`;
+var DEFAULT_FOLLOW_GATE = "Follow us first \u{1F64C}";
+var DEFAULT_FOLLOW_BUTTON = "\u2705 I followed";
+var DEFAULT_EMAIL_ASK = "Reply with your email and I'll send it there too \u{1F447}";
+var FOLLOW_CARD_TITLE = "Tap once you've followed";
+function pickRotating2(texts, seed) {
+  let h = 0;
+  for (const ch of seed) h = h * 31 + ch.charCodeAt(0) >>> 0;
+  return texts[h % texts.length];
+}
+__name(pickRotating2, "pickRotating");
+function renderNudge(campaign, seed) {
+  const texts = campaign.public_reply?.enabled ? campaign.public_reply.texts : [];
+  const base = texts.length > 0 ? pickRotating2(texts, seed) : campaign.copy.opening?.trim() || DEFAULT_NUDGE;
+  return base.replaceAll("{keyword}", campaign.keywords[0] ?? "");
+}
+__name(renderNudge, "renderNudge");
+function renderDelivery2(campaign) {
+  return campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
+}
+__name(renderDelivery2, "renderDelivery");
+var TikTokEngine = class {
+  constructor(db, client, queue) {
+    this.db = db;
+    this.client = client;
+    this.queue = queue;
+  }
+  db;
+  client;
+  queue;
+  static {
+    __name(this, "TikTokEngine");
+  }
+  // ---- comments ----
+  /** A new top-level comment on an owned video: keyword match → public nudge → AWAITING_DM. */
+  async handleComment(evt, activeCampaigns) {
+    if (await isCommentProcessed(this.db, evt.comment_id)) return;
+    if (!evt.igsid) return;
+    const all = activeCampaigns ?? await getActiveCampaigns(this.db, "tiktok");
+    const campaigns = all.filter((c) => c.media_id === evt.media_id);
+    let matchedCampaignId = "-";
+    let pendingRetry = false;
+    for (const campaign of campaigns) {
+      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      matchedCampaignId = campaign.campaign_id;
+      const existing = await getConversation(this.db, evt.igsid, campaign.campaign_id);
+      if (existing && existing.state !== "AWAITING_DM") continue;
+      const sent = await this.trySend(
+        () => this.client.replyToComment(evt.media_id, evt.comment_id, renderNudge(campaign, evt.comment_id)),
+        "nudge",
+        `nudge:${campaign.campaign_id}:${evt.comment_id}`
+      );
+      if (!sent) {
+        pendingRetry = true;
+        continue;
+      }
+      if (!existing) {
+        await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "AWAITING_DM");
+        await logEvents(this.db, [
+          { campaignId: campaign.campaign_id, type: "comment_matched", igsid: evt.igsid },
+          { campaignId: campaign.campaign_id, type: "opening_sent", igsid: evt.igsid }
+        ]);
+      }
+    }
+    if (!pendingRetry) await markCommentProcessed(this.db, evt.comment_id, evt.igsid, matchedCampaignId);
+  }
+  // ---- messages ----
+  /** An inbound DM from a personal account. Advances every open funnel it applies to. */
+  async handleMessage(evt) {
+    if (!evt.conversation_id) return;
+    const open = await getOpenConversations(this.db, evt.igsid);
+    const awaitingDm = open.filter((c) => c.state === "AWAITING_DM");
+    const handled = /* @__PURE__ */ new Set();
+    for (const convo of open) {
+      const campaign = await getCampaign(this.db, convo.campaign_id);
+      if (!campaign || campaign.platform !== "tiktok") continue;
+      handled.add(campaign.campaign_id);
+      if (convo.state === "AWAITING_DM") {
+        const keyed = commentTriggers(evt.text ?? "", campaign.keywords, campaign.exclude);
+        if (!keyed && awaitingDm.length !== 1) continue;
+        await this.onDm(campaign, evt);
+        continue;
+      }
+      if (evt.timestamp <= convo.updated_at) continue;
+      switch (convo.state) {
+        case "AWAITING_FOLLOW":
+          await this.onFollow(campaign, evt, convo.follow_retries);
+          break;
+        case "AWAITING_EMAIL":
+          await this.onEmail(campaign, evt);
+          break;
+        default:
+          break;
+      }
+    }
+    if (!evt.text) return;
+    for (const campaign of await getActiveCampaigns(this.db, "tiktok")) {
+      if (handled.has(campaign.campaign_id)) continue;
+      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      const existing = await getConversation(this.db, evt.igsid, campaign.campaign_id);
+      if (!existing) {
+        await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "AWAITING_DM", evt.conversation_id);
+        await this.onDm(campaign, evt);
+      } else if (existing.state === "DONE") {
+        await this.redeliver(campaign, evt);
+      }
+    }
+  }
+  /**
+   * Every inbound message that completes a transition is remembered per campaign, so a webhook
+   * retry (or a polling re-read) of the same message can never act twice — in particular it must
+   * not look like "an already-served person asking again" and trigger a second delivery.
+   */
+  seenKey(campaign, evt) {
+    return `msg:${campaign.campaign_id}:${evt.igsid}:${evt.message_id ?? evt.timestamp}`;
+  }
+  /** Their DM arrived: record the conversation to answer on, then run the gates or deliver. */
+  async onDm(campaign, evt) {
+    const target = { igsid: evt.igsid, conversation_id: evt.conversation_id };
+    await updateConversation(this.db, evt.igsid, campaign.campaign_id, { conversation_id: target.conversation_id });
+    let next = afterTap(campaign);
+    let extraEvent;
+    let patch;
+    if (next === "AWAITING_FOLLOW" && evt.is_follower === true) {
+      next = afterFollow(campaign);
+      extraEvent = "follow_confirmed";
+      patch = { followed: 1 };
+    }
+    const committed = await this.enterState(campaign, target, next, { entryEvent: "button_clicked", extraEvent, patch });
+    if (committed) await claimSend(this.db, this.seenKey(campaign, evt));
+  }
+  async onFollow(campaign, evt, retries) {
+    const expected = campaign.copy.follow_button ?? DEFAULT_FOLLOW_BUTTON;
+    const isConfirm = evt.payload === TT_FOLLOW_PAYLOAD || titleMatches(evt.text, expected);
+    if (!isConfirm) return;
+    const target = { igsid: evt.igsid, conversation_id: evt.conversation_id };
+    if (evt.is_follower === false && !followRetriesExhausted(retries)) {
+      await this.resendFollowGate(campaign, target, retries);
+      return;
+    }
+    await this.enterState(campaign, target, afterFollow(campaign), { entryEvent: "follow_confirmed", patch: { followed: 1 } });
+  }
+  async onEmail(campaign, evt) {
+    const target = { igsid: evt.igsid, conversation_id: evt.conversation_id };
+    const email = evt.email ?? extractEmail(evt.text);
+    if (!email) {
+      const ok = await this.trySend(
+        () => this.client.sendText(target.conversation_id, campaign.copy.email_ask ?? DEFAULT_EMAIL_ASK),
+        "email_ask_resend"
+      );
+      if (ok) await updateConversation(this.db, evt.igsid, campaign.campaign_id, { state: "AWAITING_EMAIL" });
+      return;
+    }
+    await this.enterState(campaign, target, "DELIVER", { entryEvent: "email_captured", patch: { email } });
+  }
+  /** Someone already served DMs the keyword again: send the delivery once more, once per message. */
+  async redeliver(campaign, evt) {
+    const seen = this.seenKey(campaign, evt);
+    if (!await claimSend(this.db, seen)) return;
+    const outcome = await this.attempt(() => this.client.sendText(evt.conversation_id, renderDelivery2(campaign)), "redelivery", null);
+    if (outcome === "refused") {
+      await releaseSend(this.db, seen);
+      return;
+    }
+    await updateConversation(this.db, evt.igsid, campaign.campaign_id, { state: "DONE", conversation_id: evt.conversation_id });
+    await logEvent(this.db, campaign.campaign_id, "delivered", evt.igsid);
+  }
+  /**
+   * Enter a target state: send first, then — only if the send succeeded — persist the state,
+   * the patch and the entry event(s) together. A failed send changes nothing, so the triggering
+   * message is handled again on the next delivery/poll. DELIVER collapses to DONE.
+   */
+  async enterState(campaign, target, next, opts = {}) {
+    const commit = /* @__PURE__ */ __name(async (restingState, ...events) => {
+      await updateConversation(this.db, target.igsid, campaign.campaign_id, { state: restingState, ...opts.patch });
+      for (const e of [opts.entryEvent, opts.extraEvent, ...events]) {
+        if (e) await logEvent(this.db, campaign.campaign_id, e, target.igsid);
+      }
+    }, "commit");
+    switch (next) {
+      case "AWAITING_FOLLOW": {
+        const ok = await this.trySend(
+          () => this.sendFollowGate(campaign, target),
+          "follow_gate",
+          `follow_gate:${campaign.campaign_id}:${target.igsid}`
+        );
+        if (!ok) return false;
+        await commit("AWAITING_FOLLOW");
+        break;
+      }
+      case "AWAITING_EMAIL": {
+        const ok = await this.trySend(
+          () => this.client.sendText(target.conversation_id, campaign.copy.email_ask ?? DEFAULT_EMAIL_ASK),
+          "email_ask",
+          `email_ask:${campaign.campaign_id}:${target.igsid}`
+        );
+        if (!ok) return false;
+        await commit("AWAITING_EMAIL");
+        break;
+      }
+      case "DELIVER": {
+        const ok = await this.trySend(
+          () => this.client.sendText(target.conversation_id, renderDelivery2(campaign)),
+          "delivery",
+          `delivery:${campaign.campaign_id}:${target.igsid}`
+        );
+        if (!ok) return false;
+        await commit("DONE", "delivered");
+        break;
+      }
+      default:
+        await commit(next);
+    }
+    return true;
+  }
+  /**
+   * The follow gate as a Q&A button card. Card titles are capped at 40 characters, so longer
+   * gate copy goes out as a text message first, followed by a short card carrying the button.
+   */
+  async sendFollowGate(campaign, target) {
+    const gate = campaign.copy.follow_gate ?? DEFAULT_FOLLOW_GATE;
+    const button = { title: campaign.copy.follow_button ?? DEFAULT_FOLLOW_BUTTON, id: TT_FOLLOW_PAYLOAD };
+    if ([...gate].length <= QA_TITLE_MAX) {
+      return this.client.sendQaButtons(target.conversation_id, gate, [button]);
+    }
+    await this.client.sendText(target.conversation_id, gate);
+    return this.client.sendQaButtons(target.conversation_id, FOLLOW_CARD_TITLE, [button]);
+  }
+  async resendFollowGate(campaign, target, retries) {
+    const ok = await this.trySend(() => this.sendFollowGate(campaign, target), "follow_gate_resend");
+    if (ok) await updateConversation(this.db, target.igsid, campaign.campaign_id, { follow_retries: retries + 1 });
+  }
+  // ---- send helper (same at-most-once contract as engine.ts) ----
+  /**
+   * Run a send through the queue, at most once per `key`. A definite refusal (TikTok answered
+   * with a non-5xx error code, including rate limiting) releases the claim so the caller retries;
+   * an ambiguous outcome (network error, 5xx, TikTok "system error") keeps the claim and reports
+   * success, because the message may already be in the person's inbox.
+   */
+  async trySend(fn, label, key) {
+    return await this.attempt(fn, label, key ?? null) !== "refused";
+  }
+  async attempt(fn, label, claimKey) {
+    if (claimKey && !await claimSend(this.db, claimKey)) {
+      console.warn(`[chatmany:tiktok] skipping ${label}: already attempted, may have delivered (${claimKey})`);
+      return "skipped";
+    }
+    try {
+      await this.queue.run(fn);
+      return "sent";
+    } catch (e) {
+      const refused = e instanceof TikTokApiError && !isAmbiguousFailure2(e);
+      if (refused) {
+        if (claimKey) await releaseSend(this.db, claimKey);
+        console.warn(`[chatmany:tiktok] send failed (${label}), will retry: ${msg2(e)}`);
+        return "refused";
+      }
+      console.warn(`[chatmany:tiktok] send outcome unknown (${label}): ${msg2(e)} \u2014 treating as delivered so it is not sent twice`);
+      return claimKey ? "sent" : "refused";
+    }
+  }
+};
+function msg2(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+__name(msg2, "msg");
+function isAmbiguousFailure2(e) {
+  if (e.isRateLimit) return false;
+  return e.status >= 500 || e.code === TT_CODE.SYSTEM_ERROR;
+}
+__name(isAmbiguousFailure2, "isAmbiguousFailure");
+
+// src/auth/tiktokRefresh.ts
+var REFRESH_WHEN_WITHIN2 = 2 * 3600;
+async function refreshTikTokTokenIfDue(env2, opts = {}) {
+  if (!env2.TIKTOK_APP_ID || !env2.TIKTOK_APP_SECRET) return { status: "no_app" };
+  const auth = await getTikTokAuth(env2.DB);
+  if (!auth) return { status: "no_auth" };
+  const ts = now();
+  if (auth.refresh_expires_at <= ts) {
+    console.warn(
+      `[chatmany:tiktok] refresh token EXPIRED at ${new Date(auth.refresh_expires_at * 1e3).toISOString()}; owner must reconnect TikTok.`
+    );
+    return { status: "expired" };
+  }
+  if (!opts.force && auth.expires_at - ts > REFRESH_WHEN_WITHIN2) return { status: "skipped", expiresAt: auth.expires_at };
+  try {
+    const d = await refreshTikTokToken(env2.TIKTOK_APP_ID, env2.TIKTOK_APP_SECRET, auth.refresh_token);
+    const expiresAt = ts + d.expires_in;
+    await saveTikTokAuth(env2.DB, {
+      access_token: d.access_token,
+      refresh_token: d.refresh_token || auth.refresh_token,
+      business_id: d.open_id || auth.business_id,
+      expires_at: expiresAt,
+      refresh_expires_at: d.refresh_token_expires_in ? ts + d.refresh_token_expires_in : auth.refresh_expires_at,
+      scope: d.scope ?? null
+    });
+    console.log(`[chatmany:tiktok] token refreshed; new expiry ${new Date(expiresAt * 1e3).toISOString()}`);
+    return { status: "refreshed", expiresAt };
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.warn(`[chatmany:tiktok] token refresh FAILED (${detail}); expiry ${new Date(auth.expires_at * 1e3).toISOString()}`);
+    return { status: "error", detail, expiresAt: auth.expires_at };
+  }
+}
+__name(refreshTikTokTokenIfDue, "refreshTikTokTokenIfDue");
+
+// src/tiktokRuntime.ts
+async function buildTikTokRuntime(env2) {
+  let auth = await getTikTokAuth(env2.DB);
+  if (!auth) return null;
+  if (auth.expires_at <= now() + 60) {
+    const r = await refreshTikTokTokenIfDue(env2, { force: true });
+    if (r.status !== "refreshed") {
+      console.warn(`[chatmany:tiktok] access token unusable (${r.status}${r.detail ? `: ${r.detail}` : ""}); skipping.`);
+      return null;
+    }
+    auth = await getTikTokAuth(env2.DB);
+  }
+  const client = new TikTokClient(auth.access_token, auth.business_id);
+  const queue = new SendQueue({ minIntervalMs: 1500 });
+  const engine = new TikTokEngine(env2.DB, client, queue);
+  return { client, queue, engine, auth, businessId: auth.business_id };
+}
+__name(buildTikTokRuntime, "buildTikTokRuntime");
+
+// src/routes/tiktokAuth.ts
+var STATE_KEY2 = "tiktok_oauth_state";
+function configured(env2) {
+  if (!env2.TIKTOK_APP_ID || !env2.TIKTOK_APP_SECRET) return "TIKTOK_APP_ID / TIKTOK_APP_SECRET not configured (wrangler secret put)";
+  if (!env2.TIKTOK_REDIRECT_URI) return "TIKTOK_REDIRECT_URI not configured (wrangler.toml [vars])";
+  return null;
+}
+__name(configured, "configured");
+async function handleTikTokAuthorize(env2, url) {
+  const problem = configured(env2);
+  if (problem) return json({ error: problem }, 500);
+  const state = crypto.randomUUID().replace(/-/g, "");
+  await kvSet(env2.DB, STATE_KEY2, state);
+  let target = buildTikTokAuthorizeUrl(env2.TIKTOK_APP_ID, env2.TIKTOK_REDIRECT_URI, state, TIKTOK_SCOPES);
+  if (url.searchParams.get("force") === "1") target += "&disable_auto_auth=1";
+  return redirect(target);
+}
+__name(handleTikTokAuthorize, "handleTikTokAuthorize");
+async function handleTikTokCallback(env2, url) {
+  const problem = configured(env2);
+  if (problem) return html(`<h1>TikTok not configured</h1><p>${escapeHtml2(problem)}</p>`, 500);
+  const error3 = url.searchParams.get("error");
+  if (error3) {
+    const desc = url.searchParams.get("error_description") ?? "";
+    return html(`<h1>Connection cancelled</h1><p>${escapeHtml2(error3)} ${escapeHtml2(desc)}</p>`, 400);
+  }
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code) {
+    return html(
+      `<h1>No authorization code</h1>
+       <p>TikTok skipped the consent page because this account already authorized the app. Reconnect with a forced consent:</p>
+       <p><a href="/auth/tiktok/authorize?force=1">Connect TikTok again</a></p>`,
+      400
+    );
+  }
+  const expected = await kvGet(env2.DB, STATE_KEY2);
+  if (!expected || state !== expected) return html("<h1>Invalid state (possible CSRF)</h1>", 400);
+  try {
+    const tok = await exchangeTikTokCode(env2.TIKTOK_APP_ID, env2.TIKTOK_APP_SECRET, env2.TIKTOK_REDIRECT_URI, code);
+    console.log(`[chatmany:tiktok] OAuth granted scopes: ${tok.scope ?? "none reported"}`);
+    const ts = now();
+    let profile3 = {};
+    try {
+      profile3 = await new TikTokClient(tok.access_token, tok.open_id).getProfile();
+    } catch (e) {
+      console.warn(`[chatmany:tiktok] profile read failed after connect: ${e instanceof Error ? e.message : e}`);
+    }
+    await saveTikTokAuth(env2.DB, {
+      access_token: tok.access_token,
+      refresh_token: tok.refresh_token,
+      business_id: tok.open_id,
+      expires_at: ts + tok.expires_in,
+      refresh_expires_at: ts + tok.refresh_token_expires_in,
+      scope: tok.scope ?? null,
+      username: profile3.username ?? null,
+      display_name: profile3.display_name ?? null,
+      profile_image: profile3.profile_image ?? null
+    });
+    const missing = TIKTOK_SCOPES.filter((s) => !(tok.scope ?? "").split(",").map((x) => x.trim()).includes(s));
+    return html(
+      `<h1>TikTok connected \u2705</h1>
+       <p>@${escapeHtml2(profile3.username ?? tok.open_id)} is now connected to chatmany.</p>
+       ${missing.length ? `<p><b>Heads up:</b> these scopes were not granted: ${escapeHtml2(missing.join(", "))}. Comment replies need comment.list.manage; DMs need message.list.send.</p>` : ""}
+       <p>The access token is refreshed automatically (valid 1 day; the refresh token lasts 1 year). You can close this tab.</p>`
+    );
+  } catch (e) {
+    return html(`<h1>Connection failed</h1><pre>${escapeHtml2(e instanceof Error ? e.message : String(e))}</pre>`, 500);
+  }
+}
+__name(handleTikTokCallback, "handleTikTokCallback");
+async function tikTokStatus(env2) {
+  const auth = await getTikTokAuth(env2.DB);
+  const ts = now();
+  if (!auth) return { connected: false, configured: !configured(env2) };
+  return {
+    connected: true,
+    configured: !configured(env2),
+    username: auth.username,
+    display_name: auth.display_name,
+    profile_image: auth.profile_image,
+    business_id: auth.business_id,
+    scope: auth.scope,
+    expires_at: auth.expires_at,
+    refresh_expires_at: auth.refresh_expires_at,
+    expires_in_days: Math.max(0, Math.round((auth.refresh_expires_at - ts) / 86400)),
+    token_expired: auth.refresh_expires_at <= ts
+  };
+}
+__name(tikTokStatus, "tikTokStatus");
+async function handleTikTokStatus(env2) {
+  return json(await tikTokStatus(env2));
+}
+__name(handleTikTokStatus, "handleTikTokStatus");
+async function handleTikTokDisconnect(env2) {
+  await clearTikTokAuth(env2.DB);
+  return json({ disconnected: true });
+}
+__name(handleTikTokDisconnect, "handleTikTokDisconnect");
+async function handleTikTokWebhookAdmin(env2, req, url) {
+  const problem = configured(env2);
+  if (problem) return json({ error: problem }, 500);
+  const types = ["COMMENT", "DIRECT_MESSAGE"];
+  if (req.method.toUpperCase() === "POST") {
+    let body = {};
+    try {
+      body = await req.json();
+    } catch {
+    }
+    const callbackUrl = body.callback_url || `${url.origin}/webhook/tiktok`;
+    const results2 = {};
+    for (const t of types) {
+      try {
+        results2[t] = await subscribeTikTokWebhook(env2.TIKTOK_APP_ID, env2.TIKTOK_APP_SECRET, t, callbackUrl, t === "COMMENT" ? body.item_list : void 0);
+      } catch (e) {
+        results2[t] = { error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    return json({ callback_url: callbackUrl, results: results2 });
+  }
+  const results = {};
+  for (const t of types) {
+    try {
+      results[t] = await getTikTokWebhook(env2.TIKTOK_APP_ID, env2.TIKTOK_APP_SECRET, t);
+    } catch (e) {
+      results[t] = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return json({ results });
+}
+__name(handleTikTokWebhookAdmin, "handleTikTokWebhookAdmin");
+function escapeHtml2(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+__name(escapeHtml2, "escapeHtml");
+
+// src/routes/api.ts
+async function handleApi(env2, req, url) {
+  const path = url.pathname;
+  const method = req.method.toUpperCase();
+  if (path === "/api/status" && method === "GET") return statusResponse(env2);
+  if (path === "/api/media" && method === "GET") return mediaResponse(env2);
+  if (path === "/api/tiktok/status" && method === "GET") return json(await tikTokStatus(env2));
+  if (path === "/api/tiktok/media" && method === "GET") return tiktokMediaResponse(env2);
+  if (path === "/api/campaigns" && method === "GET") return campaignsList(env2, url);
+  if (path === "/api/campaigns" && method === "POST") return campaignSave(env2, req);
+  if (path === "/api/campaigns/status" && method === "POST") return campaignStatus(env2, req);
+  if (path === "/api/campaigns/archive" && method === "POST") return campaignArchive(env2, req);
+  if (path === "/api/campaigns/delete" && method === "POST") return campaignDelete(env2, req);
+  if (path === "/api/dashboard" && method === "GET") return dashboard(env2, url);
+  if (path === "/api/contacts" && method === "GET") return contacts(env2, url);
+  if (path === "/api/contacts/export" && method === "GET") return contactsCsv(env2, url);
+  return json({ error: "not found" }, 404);
+}
+__name(handleApi, "handleApi");
+async function statusResponse(env2) {
+  const auth = await getAuth(env2.DB);
+  if (!auth) return json({ connected: false });
+  return json({
+    connected: true,
+    username: auth.username,
+    account_type: auth.account_type,
+    profile_picture_url: auth.profile_picture_url,
+    ig_user_id: auth.ig_user_id,
+    expires_at: auth.expires_at,
+    expires_in_days: Math.max(0, Math.round((auth.expires_at - now()) / 86400)),
+    token_expired: auth.expires_at <= now()
+  });
+}
+__name(statusResponse, "statusResponse");
+async function mediaResponse(env2) {
+  const rt = await buildRuntime(env2);
+  if (!rt) return json({ error: "not connected" }, 400);
+  try {
+    const media = await rt.client.getMedia(30);
+    return json({ media });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+  }
+}
+__name(mediaResponse, "mediaResponse");
+async function tiktokMediaResponse(env2) {
+  const rt = await buildTikTokRuntime(env2);
+  if (!rt) return json({ error: "TikTok not connected" }, 400);
+  try {
+    const videos = await rt.client.listVideos(20);
+    return json({
+      media: videos.map((v) => ({
+        id: v.item_id,
+        media_type: v.media_type ?? "VIDEO",
+        caption: v.caption ?? "",
+        thumbnail_url: v.thumbnail_url ?? "",
+        media_url: v.thumbnail_url ?? "",
+        permalink: v.share_url ?? "",
+        timestamp: v.create_time ? new Date(Number(v.create_time) * 1e3).toISOString() : void 0,
+        comments_count: v.comments,
+        like_count: v.likes,
+        views: v.video_views
+      }))
+    });
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+  }
+}
+__name(tiktokMediaResponse, "tiktokMediaResponse");
+async function campaignsList(env2, url) {
+  const archived = url.searchParams.get("archived") === "1";
+  const items = await getAllCampaigns(env2.DB, { archived });
+  return json({
+    campaigns: items.map((i) => ({ ...i.campaign, active: i.active, archived: i.archived, updated_at: i.updated_at }))
+  });
+}
+__name(campaignsList, "campaignsList");
+async function campaignSave(env2, req) {
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: "invalid JSON" }, 400);
+  }
+  const payload = body;
+  let campaign;
+  try {
+    campaign = validateCampaign(payload.campaign);
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  await upsertCampaign(env2.DB, campaign, payload.active ?? true);
+  return json({ ok: true, campaign_id: campaign.campaign_id });
+}
+__name(campaignSave, "campaignSave");
+async function campaignStatus(env2, req) {
+  const body = await safeJson(req);
+  if (!body.campaign_id) return json({ error: "campaign_id required" }, 400);
+  await setCampaignActive(env2.DB, body.campaign_id, Boolean(body.active));
+  return json({ ok: true });
+}
+__name(campaignStatus, "campaignStatus");
+async function campaignArchive(env2, req) {
+  const body = await safeJson(req);
+  if (!body.campaign_id) return json({ error: "campaign_id required" }, 400);
+  await setCampaignArchived(env2.DB, body.campaign_id, Boolean(body.archived));
+  return json({ ok: true });
+}
+__name(campaignArchive, "campaignArchive");
+async function campaignDelete(env2, req) {
+  const body = await safeJson(req);
+  if (!body.campaign_id) return json({ error: "campaign_id required" }, 400);
+  await deleteCampaign(env2.DB, body.campaign_id);
+  return json({ ok: true });
+}
+__name(campaignDelete, "campaignDelete");
+async function dashboard(env2, url) {
+  const campaignId = url.searchParams.get("campaign_id");
+  const days = Math.max(1, Math.min(365, Number(url.searchParams.get("days")) || 30));
+  const since = now() - days * 86400;
+  const counts = await eventCountsByType(env2.DB, campaignId, since);
+  const comments = counts.comment_matched;
+  const pct = /* @__PURE__ */ __name((n) => comments > 0 ? Math.round(n / comments * 100) : 0, "pct");
+  return json({
+    campaign_id: campaignId,
+    days,
+    cards: {
+      comments,
+      sends: counts.opening_sent,
+      clicks: counts.button_clicked,
+      ctr: counts.opening_sent > 0 ? Math.round(counts.button_clicked / counts.opening_sent * 100) : 0,
+      follows: counts.follow_confirmed,
+      emails: counts.email_captured,
+      delivered: counts.delivered
+    },
+    funnel: [
+      { label: "Commented", value: comments, pct: 100 },
+      { label: "Clicked", value: counts.button_clicked, pct: pct(counts.button_clicked) },
+      { label: "Followed", value: counts.follow_confirmed, pct: pct(counts.follow_confirmed) },
+      { label: "Gave email", value: counts.email_captured, pct: pct(counts.email_captured) },
+      { label: "Delivered", value: counts.delivered, pct: pct(counts.delivered) }
+    ]
+  });
+}
+__name(dashboard, "dashboard");
+var STATE_LABEL = {
+  NEW: "opening",
+  AWAITING_TAP: "opening sent",
+  AWAITING_FOLLOW: "awaiting follow",
+  AWAITING_EMAIL: "awaiting email",
+  DELIVER: "delivering",
+  DONE: "delivered"
+};
+async function contacts(env2, url) {
+  const campaignId = url.searchParams.get("campaign_id");
+  const rows = await listConversations(env2.DB, campaignId);
+  return json({
+    contacts: rows.map((r) => ({
+      igsid: r.igsid,
+      username: r.username,
+      campaign_id: r.campaign_id,
+      state: r.state,
+      status_label: STATE_LABEL[r.state] ?? r.state,
+      followed: r.followed === 1,
+      email: r.email,
+      updated_at: r.updated_at
+    }))
+  });
+}
+__name(contacts, "contacts");
+async function contactsCsv(env2, url) {
+  const campaignId = url.searchParams.get("campaign_id");
+  const rows = await listConversations(env2.DB, campaignId);
+  const header = ["username", "igsid", "campaign_id", "status", "followed", "email", "updated_at"];
+  const lines = [header.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        csv(r.username ?? ""),
+        csv(r.igsid),
+        csv(r.campaign_id),
+        csv(STATE_LABEL[r.state] ?? r.state),
+        r.followed === 1 ? "yes" : "no",
+        csv(r.email ?? ""),
+        new Date(r.updated_at * 1e3).toISOString()
+      ].join(",")
+    );
+  }
+  return new Response(lines.join("\n"), {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="chatmany-contacts.csv"`
+    }
+  });
+}
+__name(contactsCsv, "contactsCsv");
+function csv(v) {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+__name(csv, "csv");
+async function safeJson(req) {
+  try {
+    return await req.json();
+  } catch {
+    return {};
+  }
+}
+__name(safeJson, "safeJson");
+
+// src/routes/tiktokWebhook.ts
+var SIGNATURE_TOLERANCE_SECONDS = 300;
+function handleTikTokWebhookVerify(url) {
+  const challenge = url.searchParams.get("challenge");
+  return new Response(challenge ?? "ok", { status: 200, headers: { "content-type": "text/plain" } });
+}
+__name(handleTikTokWebhookVerify, "handleTikTokWebhookVerify");
+async function handleTikTokWebhookEvent(env2, req) {
+  if (!env2.TIKTOK_APP_SECRET) return json({ error: "TIKTOK_APP_SECRET not configured" }, 503);
+  const raw = await req.text();
+  const sig = req.headers.get("tiktok-signature");
+  if (!await verifyTikTokSignature(env2.TIKTOK_APP_SECRET, raw, sig, now())) {
+    return new Response("invalid signature", { status: 401 });
+  }
+  let envelope;
+  try {
+    envelope = JSON.parse(raw);
+  } catch {
+    return json({ error: "invalid JSON" }, 400);
+  }
+  if (env2.TIKTOK_APP_ID && envelope.client_key && envelope.client_key !== env2.TIKTOK_APP_ID) {
+    return json({ ok: true, ignored: "other app" });
+  }
+  const normalized = normalizeTikTokEvent(envelope);
+  if (normalized.kind === "ignored") return json({ ok: true, ignored: normalized.reason });
+  const rt = await buildTikTokRuntime(env2);
+  if (!rt) return json({ ok: true, note: "no TikTok account connected" });
+  if (envelope.user_openid && envelope.user_openid !== rt.businessId) {
+    return json({ ok: true, ignored: "other business account" });
+  }
+  try {
+    if (normalized.kind === "comment") {
+      let evt = normalized.event;
+      if (!evt.text || !evt.igsid || !evt.username) {
+        try {
+          const [c] = await rt.client.getComments(evt.media_id, [evt.comment_id]);
+          if (c) {
+            evt = {
+              ...evt,
+              text: evt.text || c.text || "",
+              igsid: evt.igsid || c.unique_identifier || c.user_id || "",
+              username: evt.username ?? c.username
+            };
+            if (c.owner) return json({ ok: true, ignored: "own comment" });
+          }
+        } catch (e) {
+          console.warn(`[chatmany:tiktok] comment read-back failed for ${evt.comment_id}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+      if (!evt.igsid) return json({ ok: true, ignored: "no commenter id" });
+      await rt.engine.handleComment(evt);
+    } else {
+      await rt.engine.handleMessage(normalized.event);
+    }
+  } catch (e) {
+    console.error(`[chatmany:tiktok] webhook handling failed (${envelope.event}): ${e instanceof Error ? e.stack ?? e.message : e}`);
+  }
+  return json({ ok: true });
+}
+__name(handleTikTokWebhookEvent, "handleTikTokWebhookEvent");
+function normalizeTikTokEvent(envelope) {
+  const content = parseContent(envelope.content);
+  switch (envelope.event) {
+    case "comment.update": {
+      if (content.comment_action !== "insert") return { kind: "ignored", reason: `comment ${String(content.comment_action)}` };
+      if (content.comment_type && content.comment_type !== "comment") return { kind: "ignored", reason: "comment reply" };
+      const commentId = idString(content.comment_id);
+      const videoId = idString(content.video_id);
+      if (!commentId || !videoId) return { kind: "ignored", reason: "comment without ids" };
+      return {
+        kind: "comment",
+        event: {
+          kind: "comment",
+          comment_id: commentId,
+          igsid: typeof content.unique_identifier === "string" ? content.unique_identifier : "",
+          text: typeof content.text === "string" ? content.text : "",
+          media_id: videoId,
+          timestamp: toSeconds(content.timestamp, envelope.create_time)
+        }
+      };
+    }
+    case "im_receive_msg": {
+      const from = content.from_user ?? {};
+      if (from.role && from.role !== "personal_account") return { kind: "ignored", reason: `message from ${from.role}` };
+      const igsid = from.id || (typeof content.unique_identifier === "string" ? content.unique_identifier : "");
+      const conversationId = typeof content.conversation_id === "string" ? content.conversation_id : "";
+      if (!igsid || !conversationId) return { kind: "ignored", reason: "message without sender/conversation" };
+      const text = content.type === "text" ? content.text?.body : void 0;
+      const payload = content.reply_source_payload?.reply_source_unique_id;
+      return {
+        kind: "message",
+        event: {
+          kind: "message",
+          igsid,
+          text,
+          payload,
+          timestamp: toSeconds(content.timestamp, envelope.create_time),
+          conversation_id: conversationId,
+          is_follower: typeof content.is_follower === "boolean" ? content.is_follower : void 0,
+          username: typeof content.from === "string" ? content.from : void 0,
+          message_id: typeof content.message_id === "string" ? content.message_id : void 0
+        }
+      };
+    }
+    case "im_receive_msg_eu":
+      return { kind: "ignored", reason: "EU message (stripped payload)" };
+    default:
+      return { kind: "ignored", reason: envelope.event ?? "unknown event" };
+  }
+}
+__name(normalizeTikTokEvent, "normalizeTikTokEvent");
+function parseContent(content) {
+  if (!content) return {};
+  const safe = content.replace(/("(?:comment_id|video_id|parent_comment_id)"\s*:\s*)(\d{15,})/g, '$1"$2"');
+  try {
+    const parsed = JSON.parse(safe);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+__name(parseContent, "parseContent");
+function idString(v) {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isSafeInteger(v)) return String(v);
+  return "";
+}
+__name(idString, "idString");
+function toSeconds(contentTs, envelopeTs) {
+  if (typeof contentTs === "number" && contentTs > 0) return contentTs > 1e12 ? Math.floor(contentTs / 1e3) : Math.floor(contentTs);
+  if (typeof envelopeTs === "number" && envelopeTs > 0) return Math.floor(envelopeTs);
+  return now();
+}
+__name(toSeconds, "toSeconds");
+async function verifyTikTokSignature(appSecret, raw, header, nowSeconds, toleranceSeconds = SIGNATURE_TOLERANCE_SECONDS) {
+  if (!header || !appSecret) return false;
+  const parts = {};
+  for (const kv of header.split(",")) {
+    const i = kv.indexOf("=");
+    if (i > 0) parts[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+  }
+  const t = Number(parts.t);
+  const s = (parts.s ?? "").toLowerCase();
+  if (!Number.isFinite(t) || !s) return false;
+  if (Math.abs(nowSeconds - t) > toleranceSeconds) return false;
+  const expected = await hmacHex(appSecret, `${t}.${raw}`);
+  if (expected.length !== s.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) mismatch |= expected.charCodeAt(i) ^ s.charCodeAt(i);
+  return mismatch === 0;
+}
+__name(verifyTikTokSignature, "verifyTikTokSignature");
+async function hmacHex(secret, message) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(hmacHex, "hmacHex");
+
+// src/poller/tiktokPoll.ts
+var MSG_CURSOR_KEY = "tiktok_last_msg_poll_ts";
+var OVERLAP_MS = 12e4;
+var MAX_CONVERSATIONS_PER_TICK = 25;
+async function pollTikTokComments(rt, db) {
+  const campaigns = await getActiveCampaigns(db, "tiktok");
+  if (campaigns.length === 0) return;
+  const videoIds = [...new Set(campaigns.map((c) => c.media_id))];
+  for (const videoId of videoIds) {
+    let comments;
+    try {
+      comments = (await rt.client.listComments(videoId, 30)).comments;
+    } catch (e) {
+      console.warn(`[chatmany:tiktok] listComments(${videoId}) failed: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    const handled = await processedCommentIds(db, comments.map((c) => c.comment_id));
+    for (const c of comments) {
+      if (handled.has(c.comment_id)) continue;
+      if (c.owner || c.parent_comment_id) continue;
+      const igsid = c.unique_identifier || c.user_id;
+      if (!igsid) continue;
+      const evt = {
+        kind: "comment",
+        comment_id: c.comment_id,
+        igsid,
+        username: c.username,
+        text: c.text ?? "",
+        media_id: videoId,
+        timestamp: Number(c.create_time) || now()
+      };
+      await rt.engine.handleComment(evt, campaigns);
+    }
+  }
+}
+__name(pollTikTokComments, "pollTikTokComments");
+async function pollTikTokMessages(rt, db) {
+  const cursorRaw = await kvGet(db, MSG_CURSOR_KEY);
+  const cursor = cursorRaw ? Number(cursorRaw) : 0;
+  const floor = cursor > 0 ? cursor - OVERLAP_MS : 0;
+  let conversations = [];
+  for (const type of ["STRANGER", "SINGLE"]) {
+    try {
+      conversations.push(...await rt.client.listConversations(type));
+    } catch (e) {
+      console.warn(`[chatmany:tiktok] listConversations(${type}) failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  conversations = conversations.filter((c) => (c.update_time ?? 0) >= floor).sort((a, b) => (b.update_time ?? 0) - (a.update_time ?? 0)).slice(0, MAX_CONVERSATIONS_PER_TICK);
+  let maxTs = cursor;
+  for (const convo of conversations) {
+    let messages, participants;
+    try {
+      ({ messages, participants } = await rt.client.listMessages(convo.conversation_id));
+    } catch (e) {
+      console.warn(`[chatmany:tiktok] listMessages failed: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    const person = participants.find((p) => p.role === "PERSONAL_ACCOUNT");
+    for (const m of messages) {
+      const fromId = m.from_user?.id;
+      if (!fromId || fromId === rt.businessId || m.from_user?.role === "BUSINESS_ACCOUNT") continue;
+      const ts = m.timestamp ?? 0;
+      if (ts < floor) continue;
+      if (ts > maxTs) maxTs = ts;
+      const evt = {
+        kind: "message",
+        igsid: fromId,
+        text: m.message_type === "TEXT" ? m.text?.body : void 0,
+        timestamp: Math.floor(ts / 1e3),
+        conversation_id: convo.conversation_id,
+        is_follower: person?.is_follower,
+        username: person?.display_name,
+        message_id: m.message_id
+      };
+      await rt.engine.handleMessage(evt);
+    }
+  }
+  await kvSet(db, MSG_CURSOR_KEY, String(Math.max(maxTs, Date.now() - OVERLAP_MS)));
+}
+__name(pollTikTokMessages, "pollTikTokMessages");
+
+// src/index.ts
+var POLL_CRON = "* * * * *";
+var REFRESH_CRON = "0 3 * * *";
+var index_default = {
+  async fetch(req, env2) {
+    const url = new URL(req.url);
+    const { pathname } = url;
+    const method = req.method.toUpperCase();
+    if (pathname === "/health") return json({ ok: true, mode: env2.MODE });
+    if (pathname === "/auth/authorize" && method === "GET") return handleAuthorize(env2);
+    if (pathname === "/auth/callback" && method === "GET") return handleCallback(env2, url);
+    if (pathname === "/webhook" && method === "GET") return handleWebhookVerify(env2, url);
+    if (pathname === "/webhook" && method === "POST") return handleWebhookEvent(env2, req);
+    if (pathname === "/auth/tiktok/authorize" && method === "GET") return handleTikTokAuthorize(env2, url);
+    if (pathname === "/auth/tiktok/callback" && method === "GET") return handleTikTokCallback(env2, url);
+    if (pathname === "/webhook/tiktok" && method === "GET") return handleTikTokWebhookVerify(url);
+    if (pathname === "/webhook/tiktok" && method === "POST") return handleTikTokWebhookEvent(env2, req);
+    if (pathname.startsWith("/api/")) {
+      if (!isOwner(req, url, env2)) return json({ error: "unauthorized" }, 401);
+      return handleApi(env2, req, url);
+    }
+    const ownerRoutes = /* @__PURE__ */ new Set([
+      "/auth/status",
+      "/auth/disconnect",
+      "/config/import",
+      "/config/export",
+      "/admin/poll",
+      "/auth/tiktok/status",
+      "/auth/tiktok/disconnect",
+      "/admin/tiktok/webhooks",
+      "/admin/tiktok/poll"
+    ]);
+    if (ownerRoutes.has(pathname)) {
+      if (!isOwner(req, url, env2)) return json({ error: "unauthorized" }, 401);
+      if (pathname === "/auth/status" && method === "GET") return handleStatus(env2);
+      if (pathname === "/auth/disconnect" && method === "POST") return handleDisconnect(env2);
+      if (pathname === "/config/import" && method === "POST") return handleConfigImport(env2, req);
+      if (pathname === "/config/export" && method === "GET") return handleConfigExport(env2);
+      if (pathname === "/admin/poll" && method === "POST") {
+        await runPoll(env2);
+        return json({ ok: true, ran: "poll" });
+      }
+      if (pathname === "/auth/tiktok/status" && method === "GET") return handleTikTokStatus(env2);
+      if (pathname === "/auth/tiktok/disconnect" && method === "POST") return handleTikTokDisconnect(env2);
+      if (pathname === "/admin/tiktok/webhooks") return handleTikTokWebhookAdmin(env2, req, url);
+      if (pathname === "/admin/tiktok/poll" && method === "POST") {
+        const ran = await runTikTokPoll(env2);
+        return json({ ok: true, ran: ran ? "tiktok-poll" : "skipped (no TikTok account connected)" });
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+    const assetRes = await env2.ASSETS.fetch(req);
+    if (assetRes.status !== 404) return assetRes;
+    if (method === "GET") {
+      return env2.ASSETS.fetch(new Request(new URL("/index.html", url.origin), req));
+    }
+    return json({ error: "not found" }, 404);
+  },
+  async scheduled(event, env2) {
+    if (event.cron === REFRESH_CRON) {
+      const result = await refreshTokenIfDue(env2);
+      console.log(`[chatmany] token refresh: ${result.status}`);
+      return;
+    }
+    if (event.cron === POLL_CRON) {
+      const tt = await refreshTikTokTokenIfDue(env2);
+      if (tt.status === "refreshed" || tt.status === "error" || tt.status === "expired") {
+        console.log(`[chatmany:tiktok] token refresh: ${tt.status}${tt.detail ? ` (${tt.detail})` : ""}`);
+      }
+      if (env2.TIKTOK_MODE === "polling") await runTikTokPoll(env2);
+      if (env2.MODE === "webhook") return;
+      await runPoll(env2);
+    }
+  }
+};
+async function runTikTokPoll(env2) {
+  const rt = await buildTikTokRuntime(env2);
+  if (!rt) return false;
+  await pollTikTokComments(rt, env2.DB);
+  await pollTikTokMessages(rt, env2.DB);
+  return true;
+}
+__name(runTikTokPoll, "runTikTokPoll");
+async function runPoll(env2) {
+  const interval = Math.max(30, Number(env2.POLL_INTERVAL_SECONDS) || 90);
+  const claimed = await claimPollSlot(env2.DB, interval);
+  if (!claimed) return;
+  if (!await acquireRunLock(env2.DB)) {
+    console.warn("[chatmany] previous poll still running; skipping this tick.");
+    return;
+  }
+  try {
+    const rt = await buildRuntime(env2);
+    if (!rt) return;
+    await pollMessages(rt, env2.DB);
+    await pollComments(rt, env2.DB);
+  } finally {
+    await releaseRunLock(env2.DB);
+  }
+}
+__name(runPoll, "runPoll");
+var RUN_LOCK_SECONDS = 900;
+async function acquireRunLock(db) {
+  const ts = now();
+  await db.prepare("INSERT OR IGNORE INTO kv (key, value, updated_at) VALUES ('poll_lock_until', '0', ?)").bind(ts).run();
+  const res = await db.prepare("UPDATE kv SET value = ?, updated_at = ? WHERE key = 'poll_lock_until' AND CAST(value AS INTEGER) <= ?").bind(String(ts + RUN_LOCK_SECONDS), ts, ts).run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+async function releaseRunLock(db) {
+  await db.prepare("UPDATE kv SET value = '0', updated_at = ? WHERE key = 'poll_lock_until'").bind(now()).run();
+}
+export {
+  index_default as default
+};
+//# sourceMappingURL=index.js.map
+
+--9b0b3a5437e0694ce75e0d391c911f2c0c848f728cfc8cd0db631747c9ef--
