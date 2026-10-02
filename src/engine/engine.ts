@@ -11,6 +11,7 @@ import type {
   NormalizedComment,
   NormalizedMessage,
   State,
+  Env,
 } from "../types";
 import { InstagramApiError } from "../api/client";
 import { commentTriggers, extractEmail } from "./match";
@@ -31,6 +32,7 @@ import {
   releaseSend,
   updateConversation,
 } from "../db";
+import { generateSmartReply } from "./ai";
 import type { ConversationRow } from "../db";
 
 const OPENING_PAYLOAD = "OPENING_TAP";
@@ -48,6 +50,7 @@ export class Engine {
     private readonly db: D1Database,
     private readonly client: InstagramClient,
     private readonly queue: SendQueue,
+    private readonly env: Env,
   ) {}
 
   // ---- comments ----
@@ -68,7 +71,7 @@ export class Engine {
     let pendingRetry = false;
 
     for (const campaign of campaigns) {
-      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude, campaign.comment_anything)) continue;
       matchedCampaignId = campaign.campaign_id;
 
       // Public actions are per-comment (independent toggles), guarded so re-polls don't repeat them.
@@ -101,18 +104,13 @@ export class Engine {
   }
 
   /**
-   * Open the chat via a private reply to the comment, using a postback button (Step 1).
-   * Returns true if the opening was sent and the funnel entry recorded; false on a send failure
-   * (so the caller leaves the comment unprocessed for a retry on the next poll).
+   * Open the chat via a private reply to the comment. (Step 1).
+   * Instagram doesn't support buttons here, so we just send the opening text.
+   * Any reply from the user will advance the state.
    */
   private async sendOpening(campaign: Campaign, evt: NormalizedComment): Promise<boolean> {
-    const button = {
-      type: "postback" as const,
-      title: campaign.copy.opening_button ?? "Continue",
-      payload: OPENING_PAYLOAD,
-    };
     const ok = await this.trySend(
-      () => this.client.privateReplyWithButtons(evt.comment_id, campaign.copy.opening, [button]),
+      () => this.client.privateReplyText(evt.comment_id, campaign.copy.opening),
       "opening",
       `opening:${campaign.campaign_id}:${evt.comment_id}`,
     );
@@ -133,6 +131,7 @@ export class Engine {
    */
   async handleMessage(evt: NormalizedMessage): Promise<void> {
     const open = await getOpenConversations(this.db, evt.igsid);
+    let advanced = false;
     for (const convo of open) {
       // Idempotency: only act on a message that arrived after our last transition, so re-reads of
       // the same message in the conversation history don't advance the funnel twice.
@@ -141,6 +140,7 @@ export class Engine {
       const campaign = await getCampaign(this.db, convo.campaign_id);
       if (!campaign) continue;
 
+      advanced = true;
       switch (convo.state as State) {
         case "AWAITING_TAP":
           await this.onTap(campaign, evt);
@@ -155,6 +155,30 @@ export class Engine {
           break; // NEW / DELIVER / DONE — nothing to do
       }
     }
+
+    if (!advanced && open.length === 0) {
+      await this.handleSmartReply(evt);
+    }
+  }
+
+  private async handleSmartReply(evt: NormalizedMessage): Promise<void> {
+    if (!evt.text) return;
+    
+    // Deduplicate AI replies for the same message across repolls
+    const lastAiTs = await kvGet(this.db, `ai_reply_ts:${evt.igsid}`);
+    if (lastAiTs && evt.timestamp <= Number(lastAiTs)) return;
+    
+    // Set first so we don't spam if generation takes a long time
+    await kvSet(this.db, `ai_reply_ts:${evt.igsid}`, String(evt.timestamp));
+
+    const reply = await generateSmartReply(this.env, evt.text);
+    if (!reply) return;
+
+    await this.trySend(
+      () => this.client.sendText(evt.igsid, reply),
+      "ai_reply",
+      `ai_reply:${evt.igsid}:${evt.timestamp}`
+    );
   }
 
   private async onTap(campaign: Campaign, evt: NormalizedMessage): Promise<void> {
@@ -169,11 +193,11 @@ export class Engine {
     const isConfirm = evt.payload === FOLLOW_PAYLOAD || titleMatches(evt.text, expected);
     if (!isConfirm) return; // unrelated message; stay in AWAITING_FOLLOW
 
-    // verify_follow_count: weak heuristic (documented unreliable). Compare follower total against
-    // the baseline captured when the gate was sent; if it didn't grow, re-send and stay (capped).
+    // verify_follow_count: strict verification using the is_user_follow_business field.
+    // Fetches the user profile and definitively checks if they follow the business account.
     if (campaign.verify_follow_count && !followRetriesExhausted(retries)) {
-      const looksFollowed = await this.followerCountGrew(campaign, evt.igsid);
-      if (!looksFollowed) {
+      const isFollowing = await this.client.isUserFollowingBusiness(evt.igsid);
+      if (!isFollowing) {
         await this.resendFollowGate(campaign, evt.igsid, retries);
         return;
       }
@@ -243,7 +267,6 @@ export class Engine {
           `follow_gate:${campaign.campaign_id}:${igsid}`,
         );
         if (!ok) return;
-        if (campaign.verify_follow_count) await this.captureFollowerBaseline(campaign, igsid);
         await commit("AWAITING_FOLLOW");
         break;
       }
@@ -291,32 +314,7 @@ export class Engine {
     }
   }
 
-  // ---- verify_follow_count helpers (weak heuristic) ----
 
-  private baselineKey(campaign: Campaign, igsid: string): string {
-    return `follow_baseline:${campaign.campaign_id}:${igsid}`;
-  }
-
-  private async captureFollowerBaseline(campaign: Campaign, igsid: string): Promise<void> {
-    try {
-      const count = await this.client.getFollowersCount();
-      if (count !== undefined) await kvSet(this.db, this.baselineKey(campaign, igsid), String(count));
-    } catch {
-      // best-effort; absence just means we fail open on confirm
-    }
-  }
-
-  private async followerCountGrew(campaign: Campaign, igsid: string): Promise<boolean> {
-    const baselineRaw = await kvGet(this.db, this.baselineKey(campaign, igsid));
-    if (baselineRaw === null) return true; // no baseline → fail open (advance)
-    try {
-      const current = await this.client.getFollowersCount();
-      if (current === undefined) return true;
-      return current > Number(baselineRaw);
-    } catch {
-      return true;
-    }
-  }
 
   // ---- send helpers ----
 

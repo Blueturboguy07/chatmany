@@ -526,6 +526,7 @@ function defaultDraft() {
     name: "My automation",
     media_id: "",
     media_thumb: "",
+    comment_anything: false,
     keywords: ["Link"],
     exclude: [],
     public_reply: { enabled: false, texts: ["Sent you a DM! 📩", "Check your DMs 👀"] },
@@ -551,6 +552,7 @@ function draftFromCampaign(c) {
     name: c.name || c.campaign_id,
     media_id: c.media_id,
     media_thumb: (store.media.find((m) => m.id === c.media_id) || {}).thumbnail_url || "",
+    comment_anything: !!c.comment_anything,
     keywords: c.keywords || [],
     exclude: c.exclude || [],
     public_reply: c.public_reply || { enabled: false, texts: ["Sent you a DM! 📩"] },
@@ -683,14 +685,15 @@ function renderSections() {
 
     <div class="card">
       <h3><span class="section-num">2</span>And this comment has</h3>
-      <div class="hint">Whole-word match, case-insensitive — “ai” fires on “I like this ai”, not “fair”.</div>
-      <div class="radio-row selected"><span class="radio-dot"></span><div><div class="rr-title">A specific word or words</div></div></div>
-      <label class="field"><span class="label">Keywords (comma separated)</span>
-        <input type="text" id="keywords" value="${esc(d.keywords.join(", "))}" placeholder="Link, Guide"/></label>
-      <div class="chips" id="kwchips">${["Price", "Link", "Shop"].map((k) => `<span class="chip" data-kw="${k}">${k}</span>`).join("")}</div>
+      <div class="toggle-row"><div><div class="tr-title">Trigger on ANY comment</div><div class="tr-sub">If enabled, keywords are ignored and every comment triggers this.</div></div>
+        <label class="switch"><input type="checkbox" id="comment_anything" ${d.comment_anything ? "checked" : ""}/><span class="slider"></span></label></div>
+      <div id="keywords_wrap" style="${d.comment_anything ? "display:none" : ""}">
+        <label class="field"><span class="label">Keywords (comma separated)</span>
+          <input type="text" id="keywords" value="${esc(d.keywords.join(", "))}" placeholder="Link, Guide"/></label>
+        <div class="chips" id="kwchips">${["Price", "Link", "Shop"].map((k) => `<span class="chip" data-kw="${k}">${k}</span>`).join("")}</div>
+      </div>
       <label class="field" style="margin-top:14px"><span class="label">Exclude words (optional)</span>
         <input type="text" id="exclude" value="${esc((d.exclude || []).join(", "))}" placeholder="scam, fake"/></label>
-      <div class="radio-row disabled"><span class="radio-dot"></span><div><div class="rr-title">Any word</div><div class="rr-sub">Soon</div></div></div>
 
       <div style="margin-top:8px">
         <div class="toggle-row"><div><div class="tr-title">Reply to their comment</div><div class="tr-sub">Post a public reply under the comment (rotates to look human).</div></div>
@@ -712,7 +715,7 @@ function renderSections() {
         <label class="field"><span class="label">Opening message</span><textarea id="c_opening">${esc(d.copy.opening)}</textarea></label>
         <label class="field"><span class="label">Button label</span><input type="text" id="c_opening_button" value="${esc(d.copy.opening_button)}"/></label>
       </div>
-      <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">Self-attestation — the tap advances (the API can’t verify a specific follow).</div></div>
+      <div class="toggle-row"><div><div class="tr-title">Ask them to follow you first</div><div class="tr-sub">Strictly verified by the Instagram API before they can advance.</div></div>
         <label class="switch"><input type="checkbox" id="check_follow" ${d.check_follow ? "checked" : ""}/><span class="slider"></span></label></div>
       <div id="follow_wrap" style="${d.check_follow ? "" : "display:none"}">
         <label class="field"><span class="label">Follow message</span><textarea id="c_follow_gate">${esc(d.copy.follow_gate)}</textarea></label>
@@ -791,6 +794,15 @@ function wireSections() {
       renderPreview();
     };
   };
+  const caNode = $("#comment_anything");
+  if (caNode) {
+    caNode.onchange = (e) => {
+      d.comment_anything = e.target.checked;
+      $("#keywords_wrap").style.display = e.target.checked ? "none" : "";
+      renderPreview();
+    };
+  }
+
   bindToggle("pr_enabled", (v) => (d.public_reply.enabled = v), "pr_texts_wrap");
   bindToggle("opening_enabled", (v) => (d.opening_enabled = v), "opening_wrap");
   bindToggle("check_follow", (v) => (d.check_follow = v), "follow_wrap");
@@ -966,6 +978,7 @@ function buildCampaignFromDraft() {
     campaign_id: d.campaign_id || `${slug(d.name)}-${Math.random().toString(36).slice(2, 8)}`,
     name: d.name,
     media_id: d.media_id,
+    comment_anything: d.comment_anything,
     keywords: d.keywords,
     exclude: d.exclude,
     public_reply: d.public_reply.enabled ? { enabled: true, texts: d.public_reply.texts } : { enabled: false, texts: d.public_reply.texts },
@@ -978,7 +991,7 @@ function buildCampaignFromDraft() {
 
 function validateDraft(d) {
   if (!d.media_id) return "Select a post or reel in section 1.";
-  if (!d.keywords.length) return "Add at least one keyword in section 2.";
+  if (!d.comment_anything && !d.keywords.length) return "Add at least one keyword in section 2.";
   if (!d.reward.value) return "Add your link or reward in section 4.";
   if (!d.opening_enabled) return "Turn on the opening DM — it’s required to start the funnel.";
   return null;

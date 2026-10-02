@@ -178,14 +178,17 @@ export class InstagramClient {
   /**
    * Open a chat with a fresh commenter via a private reply to their comment. This is the only
    * sanctioned way to DM a new commenter — valid up to 7 days after the comment, once per comment.
-   * The opening message uses a button template so it survives the Requests folder (Section: Step 1).
+   * Instagram Private Replies do not support Button Templates or Quick Replies, so this must be plain text.
+   * The user must reply to this text to open the 24-hour messaging window.
    */
-  privateReplyWithButtons(
+  privateReplyText(
     commentId: string,
     text: string,
-    buttons: Button[],
   ): Promise<{ message_id?: string }> {
-    return this.sendButtonTemplate({ commentId }, text, buttons);
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { comment_id: commentId },
+      message: { text },
+    });
   }
 
   // ---- public comment actions ----
@@ -225,8 +228,7 @@ export class InstagramClient {
 
   /**
    * The connected account's profile. Requests only widely-supported fields so OAuth connect never
-   * fails on an account where an optional field (e.g. followers_count) isn't returnable; the
-   * follower count is fetched separately, on demand, by getFollowersCount.
+   * fails on an account where an optional field (e.g. followers_count) isn't returnable.
    */
   getMe(): Promise<IgProfile> {
     return this.get<IgProfile>(`/me`, {
@@ -244,12 +246,14 @@ export class InstagramClient {
   }
 
   /**
-   * Weak follower-count heuristic for verify_follow_count mode (Section: Step 3). The API cannot
-   * verify a specific user's follow; this only reads the account's own follower total.
+   * Check if a specific user follows this business account (strict verification).
+   * Note: This field is only available for users who have engaged with the business via messaging.
    */
-  async getFollowersCount(): Promise<number | undefined> {
-    const me = await this.get<IgProfile>(`/me`, { fields: "followers_count" });
-    return me.followers_count;
+  async isUserFollowingBusiness(igsid: string): Promise<boolean> {
+    const res = await this.get<{ is_user_follow_business?: boolean }>(`/${igsid}`, {
+      fields: "is_user_follow_business",
+    });
+    return res.is_user_follow_business ?? false;
   }
 }
 

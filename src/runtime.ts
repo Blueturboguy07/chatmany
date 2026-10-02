@@ -28,7 +28,7 @@ export async function buildRuntime(env: Env): Promise<Runtime | null> {
   const igUserId = auth.ig_user_id ?? "me";
   const client = new InstagramClient(auth.access_token, env.GRAPH_VERSION, igUserId);
   const queue = new SendQueue();
-  const engine = new Engine(env.DB, client, queue);
+  const engine = new Engine(env.DB, client, queue, env);
   return { client, queue, engine, auth, igUserId };
 }
 

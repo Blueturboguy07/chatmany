@@ -17,6 +17,7 @@ export interface Env {
   APP_SECRET: string;
   OWNER_TOKEN: string;
   WEBHOOK_VERIFY_TOKEN?: string;
+  MUSE_API_KEY?: string;
 }
 
 /** Funnel state for one person in one campaign. */
@@ -62,6 +63,7 @@ export interface Campaign {
   /** Human-friendly automation name shown in the builder/list (optional). */
   name?: string;
   media_id: string;
+  comment_anything?: boolean;
   keywords: string[];
   exclude?: string[];
   public_reply?: PublicReplyConfig;
