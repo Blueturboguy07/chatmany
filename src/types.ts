@@ -33,6 +33,8 @@ export interface Env {
   INFRA_INGEST_TOKEN?: string;
   /** Bearer token publik presents to this Worker's /hosted/* control routes. */
   INFRA_ADMIN_TOKEN?: string;
+  /** Seconds between polls for a hosted tenant without webhooks. Default 90, floor 10. */
+  HOSTED_POLL_INTERVAL_SECONDS?: string;
 }
 
 /** Env with every hosted binding present. Produced only by `asHosted`. */

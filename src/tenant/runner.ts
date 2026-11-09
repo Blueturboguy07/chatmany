@@ -136,12 +136,16 @@ export class TenantRunner {
   runPoll(): Promise<RunReport> {
     return this.runExclusive(async () => {
       const report = this.newReport();
+      // A tenant with nothing switched on has nothing to watch: no Graph call and no metered
+      // poll. This matters once the poll runs every few seconds (HOSTED_POLL_INTERVAL_SECONDS).
+      const campaigns = await this.deps.db.getActiveCampaigns();
+      if (campaigns.length === 0) return await this.finish(report);
+
       await this.deps.meter.record(UNIT_POLL, 1);
       const guard = await this.guard(report);
       if (guard) return await this.finish(report);
 
       const ctx = await this.begin(report);
-      const campaigns = await this.deps.db.getActiveCampaigns();
       const media = [...new Set(campaigns.map((c) => c.media_id))];
       for (const mediaId of media) {
         if (this.outOfBudget(ctx, report)) break;

@@ -17,6 +17,7 @@ import {
   getTenant,
   getTenantByIgUser,
   listTenants,
+  listTenantsByPublikUser,
   listTenantsForTick,
   patchTenant,
   publicView,
@@ -25,6 +26,7 @@ import {
   tenantAppSecret,
 } from "../tenant/registry";
 import type { TenantRow } from "../tenant/registry";
+import { isTenantApiWrite, tenantApi, tenantAuthorizeUrl, tenantOAuth } from "./hostedApi";
 import { json } from "./http";
 
 /**
@@ -218,7 +220,10 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
       });
     }
     if (method === "GET") {
-      return json({ tenants: (await listTenants(env.DB)).map(publicView) });
+      // publik finds a creator's tenant by its own user id, so it needs no table of its own.
+      const publikUserId = url.searchParams.get("publik_user_id");
+      const rows = publikUserId ? await listTenantsByPublikUser(env.DB, publikUserId) : await listTenants(env.DB);
+      return json({ tenants: rows.map(publicView) });
     }
     return json({ error: "method not allowed" }, 405);
   }
@@ -236,6 +241,27 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
       await new TenantDb(env.DB, tenantId).eraseAll();
       await deleteTenant(env.DB, tenantId);
       return json({ ok: true, deleted: tenantId });
+    }
+
+    // ---- path T: connect through the shared publik Meta app, then the creator-facing API ----
+    if (action === "authorize-url" && method === "GET") return tenantAuthorizeUrl(env, url);
+
+    if (action === "oauth" && method === "POST") {
+      const { response, connected } = await tenantOAuth(env, tenant, req);
+      if (connected) {
+        // Same two steps as /connect: ask Meta for deliveries, then start this tenant's alarm.
+        await callTenant(env, tenantId, "/subscribe", {});
+        await callTenant(env, tenantId, "/arm", {});
+      }
+      return response;
+    }
+
+    if (action === "api") {
+      const subpath = "/" + parts.slice(4).join("/");
+      const res = await tenantApi(env, tenant, subpath, req, url);
+      // A saved or resumed automation must not wait for the next cron minute to be noticed.
+      if (res.ok && isTenantApiWrite(subpath, method)) ctx.waitUntil(callTenant(env, tenantId, "/arm", {}).catch(() => undefined));
+      return res;
     }
 
     if (action === "connect" && method === "POST") {

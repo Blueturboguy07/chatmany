@@ -24,8 +24,21 @@ import {
 } from "./registry";
 import type { TenantRow } from "./registry";
 
-/** Polling cadence for tenants whose webhooks are not live yet. */
-const POLL_INTERVAL_SECONDS = 90;
+/** Polling cadence for tenants whose webhooks are not live yet, unless the deployment sets one. */
+const DEFAULT_POLL_INTERVAL_SECONDS = 90;
+/** Floor for a configured cadence: one Graph read per active post per tick, per tenant. */
+const MIN_POLL_INTERVAL_SECONDS = 10;
+
+/**
+ * Comment webhooks are only delivered to an app with Advanced Access, and Meta's review of that
+ * access expects the private reply inside 30 seconds of the comment. Until webhooks are live the
+ * poll is the only path, so publik's deployment sets HOSTED_POLL_INTERVAL_SECONDS below 30.
+ */
+export function pollIntervalSeconds(env: { HOSTED_POLL_INTERVAL_SECONDS?: string }): number {
+  const n = Number(env.HOSTED_POLL_INTERVAL_SECONDS);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_POLL_INTERVAL_SECONDS;
+  return Math.max(MIN_POLL_INTERVAL_SECONDS, Math.floor(n));
+}
 /** Backlog sweep cadence: catches anything that scrolled out of the newest-page window. */
 const SWEEP_INTERVAL_SECONDS = 20 * 60;
 /** Token refresh check, once a day (a long-lived token must be > 24h old to refresh). */
@@ -115,7 +128,7 @@ export class TenantDO implements DurableObject {
 
     const parts = await this.parts(tenantId);
     if (parts) {
-      if (tenant.mode === "polling" && (await due("poll", POLL_INTERVAL_SECONDS))) {
+      if (tenant.mode === "polling" && (await due("poll", pollIntervalSeconds(this.env)))) {
         await parts.runner.runPoll();
       }
       if (await due("sweep", SWEEP_INTERVAL_SECONDS)) await parts.runner.runSweep();
@@ -131,7 +144,7 @@ export class TenantDO implements DurableObject {
     await this.ctx.storage.put("tenant_id", tenantId);
     const t = now();
     const jobs: Array<[string, number]> = [
-      ["poll", POLL_INTERVAL_SECONDS],
+      ["poll", pollIntervalSeconds(this.env)],
       ["sweep", SWEEP_INTERVAL_SECONDS],
       ["usage", USAGE_INTERVAL_SECONDS],
       ["refresh", REFRESH_INTERVAL_SECONDS],

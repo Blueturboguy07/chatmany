@@ -140,6 +140,15 @@ export async function listTenants(db: D1Database, limit = 500): Promise<TenantRo
   return rows.results ?? [];
 }
 
+/** A creator's tenants, newest first. publik keys the lookup on its own user id. */
+export async function listTenantsByPublikUser(db: D1Database, publikUserId: string, limit = 10): Promise<TenantRow[]> {
+  const rows = await db
+    .prepare("SELECT * FROM tenants WHERE publik_user_id = ? ORDER BY created_at DESC LIMIT ?")
+    .bind(publikUserId, limit)
+    .all<TenantRow>();
+  return rows.results ?? [];
+}
+
 export async function patchTenant(
   db: D1Database,
   tenantId: string,
