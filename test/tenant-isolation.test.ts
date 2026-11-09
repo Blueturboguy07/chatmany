@@ -167,6 +167,25 @@ describe("a flood on one tenant does not starve another", () => {
   });
 });
 
+describe("a tenant with nothing switched on costs nothing", () => {
+  it("reads no comments and meters no poll until an automation is on", async () => {
+    const idle = makeTenant(sharedDb, "t_idle", "media-i", 2);
+    await idle.db.upsertCampaign(campaign({ campaign_id: "ci", media_id: "media-i" }), false);
+
+    const off = await idle.runner.runPoll();
+    await idle.runner.flushUsage(true);
+    expect(off.sends).toBe(0);
+    expect(idle.client.calls.privateReplyText).toHaveLength(0);
+    expect(await idle.db.isCommentProcessed("t_idle-c0")).toBe(false);
+    expect(await idle.db.usageForMonth()).toEqual([]);
+
+    // Switched on, the same comments are served on the next tick: nothing was skipped for good.
+    await idle.db.setCampaignActive("ci", true);
+    const on = await idle.runner.runPoll();
+    expect(on.sends).toBe(2);
+  });
+});
+
 describe("pausing for credit stops sends, not ingestion", () => {
   it("keeps recording comments so a top-up resumes the backlog in order", async () => {
     const t = makeTenant(sharedDb, "t_broke", "media-x", 3);

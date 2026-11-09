@@ -100,6 +100,32 @@ describe("the control plane stays behind the admin token", () => {
   });
 });
 
+describe("POST /hosted/tenants for the shared publik app", () => {
+  it("gives a publik user the tenant they already have instead of a second one", async () => {
+    const { env, ctx } = makeHostedEnv();
+    const ask = { publik_user_id: "user-a", meta_app_kind: "publik" };
+    const first = (await (await call(env, ctx, "POST", "/hosted/tenants", ask)).json()) as { tenant: { tenant_id: string }; existing?: boolean };
+    const again = (await (await call(env, ctx, "POST", "/hosted/tenants", ask)).json()) as { tenant: { tenant_id: string }; existing?: boolean };
+    expect(first.existing).toBeUndefined();
+    expect(again.existing).toBe(true);
+    expect(again.tenant.tenant_id).toBe(first.tenant.tenant_id);
+
+    const other = (await (await call(env, ctx, "POST", "/hosted/tenants", { ...ask, publik_user_id: "user-b" })).json()) as { tenant: { tenant_id: string } };
+    expect(other.tenant.tenant_id).not.toBe(first.tenant.tenant_id);
+
+    const list = (await (await call(env, ctx, "GET", "/hosted/tenants?publik_user_id=user-a")).json()) as { tenants: unknown[] };
+    expect(list.tenants).toHaveLength(1);
+  });
+
+  it("still makes a new tenant each time for a creator's own app", async () => {
+    const { env, ctx } = makeHostedEnv();
+    const ask = { publik_user_id: "user-a", meta_app_kind: "creator" };
+    const one = (await (await call(env, ctx, "POST", "/hosted/tenants", ask)).json()) as { tenant: { tenant_id: string } };
+    const two = (await (await call(env, ctx, "POST", "/hosted/tenants", ask)).json()) as { tenant: { tenant_id: string } };
+    expect(two.tenant.tenant_id).not.toBe(one.tenant.tenant_id);
+  });
+});
+
 describe("GET /hosted/tenants?publik_user_id=", () => {
   it("returns only that publik user's tenant", async () => {
     const { env, ctx } = makeHostedEnv();

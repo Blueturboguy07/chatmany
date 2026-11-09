@@ -201,6 +201,14 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
         meta_app_secret?: string;
         meta_app_kind?: "creator" | "publik";
       };
+      // One tenant per publik user on the shared app. publik asks for "this user's tenant" on every
+      // connect, so a second ask (a retry, two tabs) gets the tenant that is already there. The
+      // oldest wins, which is the one publik's own lookup keeps using.
+      if (body.meta_app_kind === "publik" && body.publik_user_id) {
+        const mine = (await listTenantsByPublikUser(env.DB, body.publik_user_id)).filter((t) => t.meta_app_kind === "publik");
+        const first = mine[mine.length - 1];
+        if (first) return json({ tenant: publicView(first), existing: true });
+      }
       const { tenant, webhook_verify_token } = await createTenant(env, {
         publik_user_id: body.publik_user_id ?? null,
         publik_install_id: body.publik_install_id ?? null,
