@@ -175,7 +175,7 @@ describe("GET /hosted/tenants/{id}/authorize-url", () => {
 });
 
 describe("POST /hosted/tenants/{id}/oauth", () => {
-  it("stores the token encrypted for that tenant, marks it active, subscribes and arms", async () => {
+  it("stores the token encrypted for that tenant, marks it active and arms, without asking Meta for deliveries", async () => {
     const { env, ctx, dispatches } = makeHostedEnv({ APP_ID: "app-1", APP_SECRET: "secret-1" });
     const { tenant } = await createTenant(env, { publik_user_id: "u1", meta_app_kind: "publik" });
     const hits = fakeInstagram();
@@ -195,7 +195,9 @@ describe("POST /hosted/tenants/{id}/oauth", () => {
     expect(row.meta_token_expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000) + 50 * 86400);
 
     expect(hits[0]).toBe("https://api.instagram.com/oauth/access_token");
-    expect(dispatches.map((d) => d.path)).toEqual(["/subscribe", "/arm"]);
+    // No /subscribe: the shared app has one callback URL and no ingress that routes to a tenant yet.
+    expect(dispatches.map((d) => d.path)).toEqual(["/arm"]);
+    expect(hits.some((h) => h.includes("subscribed_apps"))).toBe(false);
     expect(dispatches.every((d) => d.tenantId === tenant.tenant_id)).toBe(true);
   });
 

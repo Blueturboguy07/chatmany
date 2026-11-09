@@ -257,8 +257,12 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
     if (action === "oauth" && method === "POST") {
       const { response, connected } = await tenantOAuth(env, tenant, req);
       if (connected) {
-        // Same two steps as /connect: ask Meta for deliveries, then start this tenant's alarm.
-        await callTenant(env, tenantId, "/subscribe", {});
+        // Start this tenant's alarm. Unlike /connect, do NOT ask Meta for deliveries here: on the
+        // shared app a delivery goes to the app's one callback URL, and the shared ingress that
+        // would route it to a tenant is not built. Subscribing now would only send this account's
+        // events to whatever that callback is (today: possibly the founder's self-host Worker,
+        // which shares the app). Polling serves the tenant; POST /hosted/tenants/{id}/subscribe
+        // turns deliveries on by hand once the ingress exists.
         await callTenant(env, tenantId, "/arm", {});
       }
       return response;
