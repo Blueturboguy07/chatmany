@@ -203,6 +203,36 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
       check("the Connect Instagram button is there", after.includes("Connect Instagram"));
       check("the screen after sign-in holds no key", noKey(after));
       check("the main process holds the key only after sign-in", gate.signedInKey() !== null);
+
+      // Connect Instagram: the consent page opens in the system browser. The person cancels
+      // there (Instagram does not tell publik), presses "I cancelled, start again", then approves.
+      const before = opened.length;
+      await js(`document.querySelector("[data-connect-button]").click(); true`);
+      const waiting = await waitFor(async () => opened.length > before && (await screen()) === "connecting", 15_000);
+      const first = opened[before] ?? "";
+      check("Connect Instagram opens Instagram's consent page in the system browser", waiting && first.startsWith("https://www.instagram.com/oauth/authorize"), first);
+      check("while it waits, the app offers I cancelled, start again", await js<boolean>(`Boolean(document.querySelector("[data-connect-restart]"))`));
+      writeFileSync(join(config.outDir, "connecting.txt"), await js<string>("document.body.innerText"));
+      check("a screenshot of the wait was taken", await capture("connecting"));
+      await js(`document.querySelector("[data-connect-restart]").click(); true`);
+      const restarted = await waitFor(async () => opened.length > before + 1 && (await screen()) === "connecting", 15_000);
+      const second = opened[before + 1] ?? "";
+      check("I cancelled, start again opens a new Instagram link at once", restarted && second.startsWith("https://www.instagram.com/oauth/authorize") && second !== first, second);
+      await fetch(`${config.origin}/fake/instagram-approved`).catch(() => undefined);
+      const connected = await waitFor(async () => (await screen()) === "workspace", 20_000);
+      check("after Instagram, the app shows the workspace", connected, await screen());
+      await waitFor(() => js<boolean>(`Boolean(document.querySelector("[data-chatmany-usage]")) && Boolean(document.querySelector("[data-summary-tile]"))`), 10_000);
+      await delay(800);
+      const ws = await js<string>("document.body.innerText");
+      writeFileSync(join(config.outDir, "workspace.txt"), ws);
+      check("an empty balance shows the paused notice", ws.includes("Replies are paused") && (await js<boolean>(`Boolean(document.querySelector("[data-chatmany-no-balance]"))`)));
+      check("the workspace shows What chatmany uses, in percent, with the bar", ws.includes("What chatmany uses") && /\d+%/.test(ws) && (await js<boolean>(`Boolean(document.querySelector("[data-usage-bar]"))`)));
+      check("the workspace shows no money amount", !/[$€£]\s?\d/.test(ws), ws.match(/[$€£]\s?\d[\d.,]*/)?.[0]);
+      check("the People list has the CSV download", await js<boolean>(`Boolean(document.querySelector("[data-export]"))`));
+      check("the workspace text holds no key", noKey(ws));
+      check("a screenshot of the workspace was taken", await capture("workspace"));
+      const darkWorkspace = await captureDark("workspace");
+      check("in dark mode the workspace turns dark", darkWorkspace.followed && darkWorkspace.shot, darkWorkspace.background);
     }
   } catch (error) {
     check("the smoke run finished", false, error instanceof Error ? error.message : String(error));

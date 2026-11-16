@@ -1,4 +1,4 @@
-import type { ApiResult, ConnectProgress, ConnectStarted, StatusAnswer } from "../shared/bridge";
+import type { ApiResult, AppBilling, ConnectProgress, ConnectStarted, StatusAnswer } from "../shared/bridge";
 import { CONNECT_ERROR_TEXT, OFFLINE_TEXT, isConnectError, plainError } from "../shared/messages";
 
 /**
@@ -96,8 +96,10 @@ export class ChatmanyClient {
     const query = connectId && CONNECT_ID.test(connectId) ? `connect_id=${encodeURIComponent(connectId)}` : undefined;
     const res = await this.call<StatusAnswer>("GET", "status", { query });
     if (!res.ok) return res;
-    const connect = res.data.connect ? readProgress(res.data.connect) : undefined;
-    return { ok: true, data: { ...res.data, ...(connect ? { connect } : {}) } };
+    const { billing: rawBilling, ...rest } = res.data as StatusAnswer & { billing?: unknown };
+    const connect = rest.connect ? readProgress(rest.connect) : undefined;
+    const billing = rawBilling === undefined ? undefined : readBilling(rawBilling);
+    return { ok: true, data: { ...rest, ...(connect ? { connect } : {}), ...(billing !== undefined ? { billing } : {}) } as StatusAnswer };
   }
 
   /** The Instagram link, checked to be Instagram's own consent page. */
@@ -127,6 +129,41 @@ export class ChatmanyClient {
 }
 
 /** publik's `connect` field, read strictly: an unknown shape is "unknown", never a success. */
+/**
+ * The billing part of a status answer, read strictly: shares clamped to 0..1,
+ * sentences short and without an amount. Anything else is null (the window
+ * then leaves the notice and the box out), so a wrong answer can never put a
+ * dollar figure on screen.
+ */
+export function readBilling(raw: unknown): AppBilling | null {
+  if (!raw || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  const u = (b.usage && typeof b.usage === "object" ? b.usage : null) as Record<string, unknown> | null;
+  if (typeof b.can_pay !== "boolean" || !u) return null;
+  const share = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null);
+  const words = (v: unknown): string | null => (typeof v === "string" && v.length > 0 && v.length <= 400 && !/[$€£¥]|\bUSD\b|\bcents?\b/i.test(v) ? v : null);
+  const headline = words(u.headline);
+  const cost = words(u.cost);
+  if (!headline || !cost) return null;
+  const n = (b.notice && typeof b.notice === "object" ? b.notice : null) as Record<string, unknown> | null;
+  const notice = n && words(n.title) && words(n.body) ? { title: words(n.title)!, body: words(n.body)! } : null;
+  if (!b.can_pay && !notice) return null;
+  const resets = typeof u.resets_at === "string" && !Number.isNaN(Date.parse(u.resets_at)) ? u.resets_at : null;
+  return {
+    can_pay: b.can_pay,
+    notice: b.can_pay ? null : notice,
+    usage: {
+      hosting_share: share(u.hosting_share),
+      used_share: share(u.used_share),
+      resets_at: resets,
+      prepaid_left_share: share(u.prepaid_left_share),
+      headline,
+      detail: u.detail === null || u.detail === undefined ? null : words(u.detail),
+      cost,
+    },
+  };
+}
+
 export function readProgress(raw: unknown): ConnectProgress {
   if (!raw || typeof raw !== "object") return { state: "unknown" };
   const p = raw as Json;

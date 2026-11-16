@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import type { AppBilling } from "../../shared/bridge";
 import { draftFromCampaign, newDraft, type Draft } from "../../shared/campaign";
 import { accountTypeLabel } from "../../shared/messages";
 import type { CampaignRow, ConnectedStatus, DashboardView, IgMedia } from "../../shared/types";
-import { BusyLabel, Status, bridge } from "../ui";
+import { BusyLabel, ExternalLink, Status, bridge } from "../ui";
 import { AutomationBuilder } from "./AutomationBuilder";
 import { AutomationRow } from "./AutomationRow";
 import { ContactsSection } from "./ContactsSection";
@@ -19,11 +20,13 @@ const COUNT = new Intl.NumberFormat("en-US");
  */
 export function Workspace({
   status,
+  billing = null,
   onReconnect,
   reconnecting,
   onDisconnected,
 }: {
   status: ConnectedStatus;
+  billing?: AppBilling | null;
   onReconnect: () => void;
   reconnecting: boolean;
   onDisconnected: () => void;
@@ -79,7 +82,11 @@ export function Workspace({
         </div>
       ) : null}
 
+      {billing && !billing.can_pay && billing.notice ? <NoBalanceNotice notice={billing.notice} /> : null}
+
       <SummaryTiles summary={summary} />
+
+      {billing ? <HostingUsage billing={billing} /> : null}
 
       <section className="mt-12" aria-labelledby="automations-title">
         <div className="spread">
@@ -176,6 +183,65 @@ function AccountHeader({ status }: { status: ConnectedStatus }) {
         <p className="small muted">{accountTypeLabel(status.account_type)} · connected to publik</p>
       </div>
     </div>
+  );
+}
+
+const WALLET_URL = "https://publikhq.com/wallet";
+
+/** The publik balance cannot pay: the hosted service sends nothing. publik's words, with the way out. */
+function NoBalanceNotice({ notice }: { notice: { title: string; body: string } }) {
+  return (
+    <div className="notice notice-error mt-6" role="alert" data-chatmany-no-balance>
+      <p className="bold">{notice.title}</p>
+      <p className="mt-1">{notice.body}</p>
+      <p className="mt-2">
+        <ExternalLink href={WALLET_URL} className="link bold">
+          Open your wallet
+        </ExternalLink>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * What chatmany used of the plan's monthly limit, as shares and publik's
+ * sentences (never an amount): chatmany's part of the bar first, the other
+ * apps' part after it. Without a plan, the prepaid sentence alone.
+ */
+function HostingUsage({ billing }: { billing: AppBilling }) {
+  const { usage } = billing;
+  const hosting = usage.hosting_share;
+  const others = hosting !== null && usage.used_share !== null ? Math.max(0, usage.used_share - hosting) : null;
+  return (
+    <section className="mt-8" aria-labelledby="chatmany-usage-title" data-chatmany-usage>
+      <h2 id="chatmany-usage-title" className="small bold">
+        What chatmany uses
+      </h2>
+      <div className="card mt-3">
+        <p>{usage.headline}</p>
+        {hosting !== null && others !== null ? <UsageBar hosting={hosting} others={others} /> : null}
+        {usage.detail ? <p className="mt-2 small muted">{usage.detail}</p> : null}
+        <p className="mt-3 tiny muted">
+          {usage.cost}{" "}
+          <ExternalLink href={WALLET_URL} className="link bold">
+            Open your wallet
+          </ExternalLink>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/** A two-part bar drawn as SVG (the window's CSP allows no inline style). */
+function UsageBar({ hosting, others }: { hosting: number; others: number }) {
+  const a = Math.min(100, Math.max(0, hosting * 100));
+  const b = Math.min(100 - a, Math.max(0, others * 100));
+  return (
+    <svg className="usage-bar mt-3" viewBox="0 0 100 4" preserveAspectRatio="none" role="img" aria-label="Your plan's monthly limit used" data-usage-bar>
+      <rect className="usage-track" x="0" y="0" width="100" height="4" rx="2" />
+      <rect className="usage-other" x={a} y="0" width={b} height="4" />
+      <rect className="usage-mine" x="0" y="0" width={a} height="4" />
+    </svg>
   );
 }
 

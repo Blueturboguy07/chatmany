@@ -31,7 +31,27 @@ export type ConnectProgress =
   /** publik no longer knows this connect (it is older than 15 minutes). */
   | { state: "unknown" };
 
-export type StatusAnswer = StatusView & { connect?: ConnectProgress };
+/**
+ * Paying for hosted chatmany (GET /api/v1/chatmany/status, publik
+ * lib/chatmany-app/billing.ts): the hosted page's "Replies are paused"
+ * notice and its "What chatmany uses" box, in its words. Shares (0..1) and
+ * sentences only, never an amount. null: publik did not read it this time.
+ */
+export interface AppBilling {
+  can_pay: boolean;
+  notice: { title: string; body: string } | null;
+  usage: {
+    hosting_share: number | null;
+    used_share: number | null;
+    resets_at: string | null;
+    prepaid_left_share: number | null;
+    headline: string;
+    detail: string | null;
+    cost: string;
+  };
+}
+
+export type StatusAnswer = StatusView & { connect?: ConnectProgress; billing?: AppBilling | null };
 
 export interface ConnectStarted {
   connect_id: string;

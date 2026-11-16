@@ -714,3 +714,22 @@ tbody td {
 .min0 {
   min-width: 0;
 }
+
+/* What chatmany uses: chatmany's share of the plan, then the other apps'. */
+.usage-bar {
+  display: block;
+  width: 100%;
+  height: 10px;
+}
+.usage-track {
+  fill: var(--bg-2);
+  stroke: var(--line);
+  stroke-width: 0.2;
+}
+.usage-mine {
+  fill: var(--accent);
+}
+.usage-other {
+  fill: var(--fog-2);
+  opacity: 0.45;
+}

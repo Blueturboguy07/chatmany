@@ -45,9 +45,29 @@ const check = (run, name, ok, detail) => {
   console.log(`${ok ? "PASS" : "FAIL"} [${run}] ${name}${detail === undefined ? "" : `: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`}`);
 };
 
+/** A connected Creator account, as GET /api/v1/chatmany/status answers it. */
+const CONNECTED = { connected: true, username: "smoke.creator", account_type: "MEDIA_CREATOR", profile_picture_url: null, ig_user_id: "17841400000000000", expires_at: 1_800_000_000, expires_in_days: 55, token_expired: false };
+/** publik's billing words for a creator whose balance is empty (publik lib/chatmany-app/billing.ts). Shares only. */
+const EMPTY_BALANCE = {
+  can_pay: false,
+  notice: {
+    title: "Replies are paused. Your publik balance is empty.",
+    body: "chatmany sends no DMs and no public replies while your balance is empty. Start a plan or add a top-up in your wallet. Replies start again about a minute later.",
+  },
+  usage: {
+    hosting_share: 0.12,
+    used_share: 0.4,
+    resets_at: "2026-12-01T00:00:00Z",
+    prepaid_left_share: null,
+    headline: "chatmany used 12% of your plan’s monthly limit.",
+    detail: "All your apps used 40%. The limit resets on Dec 1.",
+    cost: "Hosting is charged at what it costs publik, plus 10%. While it costs publik nothing, it costs you nothing.",
+  },
+};
+
 function fakePublik() {
   const log = [];
-  const state = { claimed: false, claimedAt: Infinity, origin: "" };
+  const state = { claimed: false, claimedAt: Infinity, origin: "", connects: [], approved: new Set(), connected: false };
   const server = createServer((req, res) => {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
@@ -85,6 +105,14 @@ function fakePublik() {
           balance_micros: 0,
         });
       }
+      // The person approves on Instagram: the newest connect lands (the smoke test calls this, as the person).
+      if (req.method === "GET" && url.pathname === "/fake/instagram-approved") {
+        const last = state.connects.at(-1);
+        if (last) state.approved.add(last);
+        state.connected = Boolean(last);
+        res.writeHead(200, { "content-type": "text/plain" });
+        return res.end("ok");
+      }
       if (req.method === "GET" && url.pathname === `/claim/${CLAIM_CODE}`) {
         state.claimed = true;
         state.claimedAt = Date.now();
@@ -99,7 +127,26 @@ function fakePublik() {
       if (url.pathname.startsWith("/api/v1/chatmany/")) {
         if (!bearer) return json(401, { error: { type: "invalid_api_key", message: "unknown key" } });
         if (!state.claimed) return json(403, { error: { type: "not_signed_in", message: "Sign in with publik first." } });
-        if (req.method === "GET" && url.pathname === "/api/v1/chatmany/status") return json(200, { connected: false });
+        if (req.method === "GET" && url.pathname === "/api/v1/chatmany/status") {
+          const connectId = url.searchParams.get("connect_id");
+          if (connectId) {
+            entry.connectId = connectId;
+            return json(200, state.approved.has(connectId) ? { ...CONNECTED, connect: { state: "connected" } } : { connected: false, connect: { state: "waiting" } });
+          }
+          return json(200, state.connected ? { ...CONNECTED, billing: EMPTY_BALANCE } : { connected: false, billing: null });
+        }
+        if (req.method === "POST" && url.pathname === "/api/v1/chatmany/connect-url") {
+          const id = `smokeconnect${String(state.connects.length + 1).padStart(10, "0")}`;
+          state.connects.push(id);
+          return json(200, { url: `https://www.instagram.com/oauth/authorize?client_id=smoke&state=app1.${id}`, connect_id: id, expires_at: Math.floor(Date.now() / 1000) + 600 });
+        }
+        if (state.connected && req.method === "GET") {
+          const path = url.pathname.slice("/api/v1/chatmany/api/".length);
+          if (path === "media") return json(200, { media: [] });
+          if (path === "campaigns") return json(200, { campaigns: [] });
+          if (path === "contacts") return json(200, { contacts: [] });
+          if (path === "dashboard") return json(200, { campaign_id: null, days: 30, cards: { comments: 3, sends: 2, clicks: 0, ctr: 0, follows: 0, emails: 0, delivered: 2 }, funnel: [] });
+        }
         return json(409, { error: { type: "not_connected", message: "Instagram is not connected." } });
       }
       return json(404, { error: { type: "not_found", message: "not found" } });
@@ -175,6 +222,10 @@ function noKeyInFiles(run, dir) {
   check(run, "app_opened was sent after sign-in, for app chatmany, with the key", opened && opened.at >= state.claimedAt && opened.event.app === "chatmany" && opened.bearer, opened?.event);
   const status = log.find((e) => e.path === "/api/v1/chatmany/status" && e.at >= state.claimedAt);
   check(run, "after sign-in the app asked publik for the chatmany status with the key", status?.bearer === true);
+  const links = log.filter((e) => e.method === "POST" && e.path === "/api/v1/chatmany/connect-url");
+  check(run, "Connect, then I cancelled, start again: two connect links, both with the key", links.length === 2 && links.every((e) => e.bearer), links.length);
+  const polled = new Set(log.filter((e) => e.connectId).map((e) => e.connectId));
+  check(run, "the app polled the second connect after starting again", polled.has(state.connects[1]), [...polled]);
   writeFileSync(join(done.dir, "requests.json"), `${JSON.stringify(log.map(({ at, method, path, bearer, event }) => ({ at, method, path, bearer, event: event?.event })), null, 2)}\n`);
 }
 

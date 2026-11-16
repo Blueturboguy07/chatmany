@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { StatusAnswer } from "../shared/bridge";
+import type { AppBilling, StatusAnswer } from "../shared/bridge";
 import { CONNECTED_TEXT, CONNECT_ERROR_TEXT, CONNECT_TIMEOUT_TEXT, UNAVAILABLE } from "../shared/messages";
 import type { ConnectedStatus, StatusView } from "../shared/types";
 import { Workspace } from "./components/Workspace";
 import { BusyLabel, ExternalLink, Status, bridge } from "./ui";
 
-type PageState = { kind: "loading" } | { kind: "unavailable" } | { kind: "error"; message: string } | { kind: "ready"; status: StatusView };
+type PageState = { kind: "loading" } | { kind: "unavailable" } | { kind: "error"; message: string } | { kind: "ready"; status: StatusView; billing: AppBilling | null };
 export type Notice = { tone: "ok" | "error"; text: string } | null;
 
 /** How the Instagram connect is going. The consent page is in the system browser. */
@@ -27,7 +27,7 @@ export function Home() {
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     const res = await bridge().workspace.status();
-    if (res.ok) setState({ kind: "ready", status: stripConnect(res.data) });
+    if (res.ok) setState({ kind: "ready", status: stripConnect(res.data), billing: res.data.billing ?? null });
     else if (res.error === UNAVAILABLE) setState({ kind: "unavailable" });
     else setState({ kind: "error", message: res.message });
   }, []);
@@ -70,7 +70,19 @@ export function Home() {
   let body: React.ReactNode = <p className="mt-8 muted">Loading…</p>;
   if (connect.phase === "waiting") {
     screen = "connecting";
-    body = <Connecting connectId={connect.connectId} until={connect.until} onCancel={() => setConnect({ phase: "idle" })} onDone={finish} />;
+    body = (
+      <Connecting
+        key={connect.connectId}
+        connectId={connect.connectId}
+        until={connect.until}
+        onCancel={() => setConnect({ phase: "idle" })}
+        onRestart={() => void startConnect()}
+        onDone={finish}
+      />
+    );
+  } else if (connect.phase === "starting" && state.kind === "ready" && !state.status.connected) {
+    screen = "connect";
+    body = <ConnectCard busy onConnect={() => undefined} />;
   } else if (state.kind === "unavailable") {
     screen = "unavailable";
     body = <Plain title="chatmany is not available yet." body="publik is still setting it up. Try again later." onRetry={load} />;
@@ -80,7 +92,15 @@ export function Home() {
   } else if (state.kind === "ready") {
     if (state.status.connected) {
       screen = "workspace";
-      body = <Workspace status={state.status} onReconnect={() => void startConnect()} reconnecting={connect.phase === "starting"} onDisconnected={() => void disconnected()} />;
+      body = (
+        <Workspace
+          status={state.status}
+          billing={state.billing}
+          onReconnect={() => void startConnect()}
+          reconnecting={connect.phase === "starting"}
+          onDisconnected={() => void disconnected()}
+        />
+      );
     } else {
       screen = "connect";
       body = <ConnectCard busy={connect.phase === "starting"} onConnect={() => void startConnect()} />;
@@ -101,7 +121,7 @@ export function Home() {
 
 function stripConnect(answer: StatusAnswer): StatusView {
   if (!answer.connected) return { connected: false };
-  const { connect: _connect, ...rest } = answer;
+  const { connect: _connect, billing: _billing, ...rest } = answer;
   return rest as ConnectedStatus;
 }
 
@@ -148,16 +168,22 @@ export function ConnectCard({ busy, onConnect }: { busy: boolean; onConnect: () 
  * Waiting for Instagram: the consent page is open in the system browser.
  * Asks publik every 3 seconds, for at most 10 minutes, how this connect
  * went: connected, or refused with a reason the person can act on.
+ *
+ * A Cancel on Instagram does not always come back to publik (Instagram may
+ * drop the connect's state), so the app cannot always know. "I cancelled,
+ * start again" ends this wait at once and opens a new Instagram link.
  */
-function Connecting({
+export function Connecting({
   connectId,
   until,
   onCancel,
+  onRestart,
   onDone,
 }: {
   connectId: string;
   until: number;
   onCancel: () => void;
+  onRestart: () => void;
   onDone: (outcome: { ok: true } | { ok: false; text: string }) => void;
 }) {
   const [note, setNote] = useState("");
@@ -210,7 +236,11 @@ function Connecting({
         <span aria-hidden className="spinner" /> Waiting for Instagram…
       </p>
       <Status className="mt-2 small danger-text">{note}</Status>
-      <div className="row mt-6">
+      <p className="mt-4 small muted">Did you press Cancel on Instagram, or close the page? Start again with a new link.</p>
+      <div className="row mt-3">
+        <button type="button" className="btn btn-primary" onClick={onRestart} data-connect-restart>
+          I cancelled, start again
+        </button>
         <button
           type="button"
           className="btn btn-quiet"
@@ -222,8 +252,8 @@ function Connecting({
         >
           Open Instagram again
         </button>
-        <button type="button" className="btn btn-quiet" onClick={onCancel}>
-          Cancel
+        <button type="button" className="btn btn-quiet" onClick={onCancel} data-connect-cancel>
+          Stop waiting
         </button>
       </div>
       {reopened ? <p className="mt-2 tiny muted">Opened again in your browser.</p> : null}
