@@ -15,6 +15,7 @@ import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
 import { handleApi } from "./routes/api";
 import { isOwner, json } from "./routes/http";
 import { fanOutTick, handleHosted } from "./routes/hosted";
+import { purgeExpired } from "./tenant/retention";
 
 export { TenantDO } from "./tenant/do";
 
@@ -84,8 +85,13 @@ export default {
 
   async scheduled(event: ScheduledController, env: Env): Promise<void> {
     if (event.cron === REFRESH_CRON) {
-      // Hosted tenants each refresh their own token on their own alarm (src/tenant/do.ts).
-      if (isHosted(env)) return;
+      // Hosted tenants each refresh their own token on their own alarm (src/tenant/do.ts). The
+      // daily cron deletes per-exchange records older than 90 days (src/tenant/retention.ts).
+      if (isHosted(env)) {
+        const deleted = await purgeExpired(env.DB, Math.floor(Date.now() / 1000));
+        console.log(`[chatmany] retention: deleted ${JSON.stringify(deleted)}`);
+        return;
+      }
       const result = await refreshTokenIfDue(env);
       console.log(`[chatmany] token refresh: ${result.status}`);
       return;

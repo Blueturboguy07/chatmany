@@ -14,6 +14,8 @@ export interface TenantRow {
   publik_user_id: string | null;
   publik_install_id: string | null;
   ig_user_id: string | null;
+  /** The Instagram-scoped id from the token exchange: what Meta's deletion callback names (0006). */
+  ig_scoped_user_id?: string | null;
   username: string | null;
   account_type: string | null;
   meta_app_kind: "creator" | "publik";
@@ -158,6 +160,7 @@ export async function patchTenant(
       | "publik_user_id"
       | "publik_install_id"
       | "ig_user_id"
+      | "ig_scoped_user_id"
       | "username"
       | "account_type"
       | "meta_app_id"
@@ -200,6 +203,18 @@ export async function saveTenantToken(
 export async function saveTenantAppSecret(env: HostedEnv, tenantId: string, secret: string): Promise<void> {
   const enc = await encryptSecret(env.TOKEN_KEK, tenantId, secret);
   await patchTenant(env.DB, tenantId, { meta_app_secret_enc: enc });
+}
+
+/**
+ * Every tenant an Instagram account is connected to, by either id Meta uses for it: the
+ * professional account id or the Instagram-scoped id (Meta's data-deletion callback).
+ */
+export async function listTenantsByInstagramUser(db: D1Database, igId: string): Promise<TenantRow[]> {
+  const rows = await db
+    .prepare("SELECT * FROM tenants WHERE ig_user_id = ? OR ig_scoped_user_id = ? ORDER BY created_at")
+    .bind(igId, igId)
+    .all<TenantRow>();
+  return rows.results ?? [];
 }
 
 export async function deleteTenant(db: D1Database, tenantId: string): Promise<void> {

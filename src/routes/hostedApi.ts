@@ -106,6 +106,8 @@ export async function tenantOAuth(
   await saveTenantToken(env, tenant.tenant_id, accessToken, now() + expiresIn);
   await patchTenant(env.DB, tenant.tenant_id, {
     ig_user_id: igUserId,
+    // Meta's data-deletion callback names the creator by this id (schema 0006).
+    ig_scoped_user_id: shortUserId,
     username: me.username ?? null,
     account_type: me.account_type ?? null,
     meta_app_id: app.appId,

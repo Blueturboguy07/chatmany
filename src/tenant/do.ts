@@ -14,6 +14,7 @@ import { InstagramClient } from "../api/client";
 import { refreshLongLivedToken } from "../api/client";
 import type { HostedEnv, NormalizedEvent } from "../types";
 import { TenantDb, now } from "./db";
+import { BalanceGate } from "./balance";
 import { UsageMeter } from "./metering";
 import { TenantRunner } from "./runner";
 import {
@@ -93,6 +94,25 @@ export class TenantDO implements DurableObject {
       case "/arm": {
         await this.arm(tenantId);
         return json({ ok: true });
+      }
+      case "/retire": {
+        // The tenant is about to be erased (disconnect, or Meta's data deletion). Report the usage
+        // still pending so the creator's bill is complete, then forget everything this object
+        // holds: the queue, the pacing clock, the cursors and the alarm. Best effort: a failure
+        // here never blocks the erase.
+        let flushed = false;
+        try {
+          const parts = await this.parts(tenantId);
+          if (parts) {
+            await parts.runner.flushUsage(true);
+            flushed = true;
+          }
+        } catch (e) {
+          console.warn(`[chatmany] ${tenantId}: final usage flush failed (${e instanceof Error ? e.message : String(e)})`);
+        }
+        await this.ctx.storage.deleteAlarm();
+        await this.ctx.storage.deleteAll();
+        return json({ ok: true, flushed });
       }
       case "/status": {
         const parts = await this.parts(tenantId);
@@ -181,12 +201,21 @@ export class TenantDO implements DurableObject {
       endpoint: this.env.PUBLIK_API_BASE,
       token: this.env.INFRA_INGEST_TOKEN,
     });
+    // publik's wallet decides whether this tenant may send (balance.ts). Same address and token as
+    // the usage flush; with either unset the gate never pauses anything.
+    const balance = new BalanceGate({
+      publikUserId: tenant.publik_user_id,
+      storage: this.ctx.storage,
+      endpoint: this.env.PUBLIK_API_BASE,
+      token: this.env.INFRA_INGEST_TOKEN,
+    });
     const runner = new TenantRunner({
       tenantId,
       db,
       storage: this.ctx.storage,
       client,
       meter,
+      balance,
       igUserId: tenant.ig_user_id,
       onStatus: async (status, reason) => {
         await patchTenant(this.env.DB, tenantId, { status, paused_reason: reason });

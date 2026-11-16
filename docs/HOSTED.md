@@ -104,32 +104,55 @@ inside that tenant's object, for the moment of use. Rotate by moving the old val
 
 ## 3. The metering contract with publik
 
+Both calls use `Authorization: Bearer <INFRA_INGEST_TOKEN>` and `PUBLIK_API_BASE`. With either
+unset, usage is only counted in D1 and nothing is ever paused for credit.
+
+**Usage** (the body publik parses in `lib/publik-api/infra/units.ts`):
+
 ```
 POST {PUBLIK_API_BASE}/api/v1/infra/usage
-Authorization: Bearer <INFRA_INGEST_TOKEN>
 Idempotency-Key: <batch key>
 Content-Type: application/json
 
-{
-  "tenant_id": "t_9f2c...",
-  "publik_user_id": "u_123",
-  "idempotency_key": "t_9f2c...:1758240000:ab12cd",
+{"batches": [{
+  "tenant": "<publik user id that owns the tenant>",
+  "idempotency_key": "t_9f2c.1758240000.ab12cd",
   "units": [
-    {"slug": "chatmany.event", "count": 412, "at": 1758240000},
-    {"slug": "chatmany.send",  "count": 247, "at": 1758240000},
-    {"slug": "chatmany.poll",  "count": 16,  "at": 1758240000}
+    {"slug": "chatmany.event", "units": 412},
+    {"slug": "chatmany.send",  "units": 247},
+    {"slug": "chatmany.poll",  "units": 16}
   ]
-}
+}]}
+
+200 {"results": [{"idempotency_key": "...", "settled": true, "replayed": false, "paused": false, ...}]}
 ```
 
-- Batched at 100 units or 60 seconds, whichever comes first.
-- `200`/`409` — recorded. `402` — the wallet is empty: the tenant's sends pause, events keep being
-  ingested for the 7-day private-reply window so a top-up resumes the backlog in order.
-  Anything else, or no answer at all — the batch stays queued and is retried with the **same**
-  idempotency key. **A reporting failure never drops the creator's work**; the DM that was sent has
-  been sent, and the count survives in D1 either way.
+- Batched at 100 units or 60 seconds, whichever comes first; at most 20 batches per flush.
+- `settled: true` — recorded (a replayed key is free). `paused: true` means the wallet cannot pay
+  any more: the tenant's sends pause.
+- `settled: false` with `invalid_tenant` — publik has no wallet key for that user yet: kept and
+  retried. Any other refusal, or a `400`, means the batch itself is bad: it leaves the send queue
+  (its units stay unreported in D1, visible to the operator).
+- Anything else, or no answer at all — the batch stays queued and is retried with the **same**
+  idempotency key. **A reporting failure never drops the creator's work.**
 
----
+**Balance** (asked before any run that can send; `src/tenant/balance.ts`):
+
+```
+GET {PUBLIK_API_BASE}/api/v1/infra/balance?tenant=<publik user id>
+200 {"tenant": "...", "can_pay": true}
+```
+
+- `can_pay: false` pauses sends (`status = 'paused_credit'`). A paused tenant makes no Instagram
+  call and is metered for nothing. It is asked again every minute, so a top-up resumes replies
+  within about a minute; while it can pay, every ten minutes (each usage answer refreshes it too).
+- No answer (publik down, a 5xx, not configured) keeps the last known state. A tenant never
+  checked is treated as able to pay: a bad minute at publik must not stop a creator's replies.
+
+**Retention**: the daily `0 3 * * *` cron deletes events, processed comments, comment actions,
+send claims and contacts (conversations) older than 90 days, across every tenant
+(`src/tenant/retention.ts`). Comments older than Instagram's 7-day private-reply window are never
+read, so a deleted processed-comment row cannot turn into a second DM.
 
 ## 4. Control plane (publik → this Worker)
 
@@ -138,8 +161,8 @@ All under `Authorization: Bearer <INFRA_ADMIN_TOKEN>`, constant-time compared.
 | route | does |
 |---|---|
 | `POST /hosted/tenants` | create a tenant; returns the six connect-page values and the verify token **once** |
-| `GET /hosted/tenants` | list tenants (no secret material) |
-| `GET/DELETE /hosted/tenants/{id}` | read one; delete erases that tenant's rows then the registry row (Meta's data-deletion path) |
+| `GET /hosted/tenants` | list tenants (no secret material); `?publik_user_id=` or `?ig_user_id=` (either Instagram id, for Meta's data-deletion callback) filters |
+| `GET/DELETE /hosted/tenants/{id}` | read one; delete asks the tenant's object to flush its last usage and forget its alarm, then erases that tenant's rows and the registry row (disconnect and Meta's data-deletion path; no call to Meta) |
 | `POST /hosted/tenants/{id}/connect` | store the token encrypted, mark active, call `POST /me/subscribed_apps`, arm the alarm |
 | `POST /hosted/tenants/{id}/{poll,sweep,subscribe,pause,resume}` | operator actions |
 | `GET /hosted/tenants/{id}/{status,usage,export}` | object state, this month's metered units, full data export |

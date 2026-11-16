@@ -195,9 +195,10 @@ describe("pausing for credit stops sends, not ingestion", () => {
     const report = await t.runner.runPoll();
     expect(report.skipped).toBe("credit");
     expect(t.client.calls.privateReplyText).toHaveLength(0);
-    // The poll tick itself is still a metered unit of publik's infrastructure.
+    // A paused tenant makes no Instagram call, so it is not charged for the poll either: an empty
+    // wallet must not run further into debt while nothing is being done for the creator.
     await t.runner.flushUsage(true);
-    expect((await t.db.usageForMonth()).some((r) => r.units > 0)).toBe(true);
+    expect((await t.db.usageForMonth()).some((r) => r.units > 0)).toBe(false);
 
     await t.storage.put("paused_credit", false);
     const after = await t.runner.runPoll();

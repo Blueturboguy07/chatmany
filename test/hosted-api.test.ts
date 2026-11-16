@@ -174,6 +174,53 @@ describe("GET /hosted/tenants/{id}/authorize-url", () => {
   });
 });
 
+describe("GET /hosted/tenants?ig_user_id= (Meta's data-deletion callback)", () => {
+  it("finds the tenant by the professional account id or by the Instagram-scoped id", async () => {
+    const { env, ctx } = makeHostedEnv({ APP_ID: "app-1", APP_SECRET: "secret-1" });
+    const { tenant } = await createTenant(env, { publik_user_id: "u1", meta_app_kind: "publik" });
+    await createTenant(env, { publik_user_id: "u2", meta_app_kind: "publik" });
+    fakeInstagram({ userId: "178414" });
+    await call(env, ctx, "POST", `/hosted/tenants/${tenant.tenant_id}/oauth`, { code: "abc", redirect_uri: REDIRECT });
+
+    const row = (await getTenant(env.DB, tenant.tenant_id))!;
+    expect(row.ig_scoped_user_id).toBe("178414");
+    for (const id of ["178414"]) {
+      const res = await call(env, ctx, "GET", `/hosted/tenants?ig_user_id=${id}`);
+      const body = (await res.json()) as { tenants: Array<{ tenant_id: string }> };
+      expect(body.tenants.map((t) => t.tenant_id)).toEqual([tenant.tenant_id]);
+    }
+    const none = await call(env, ctx, "GET", "/hosted/tenants?ig_user_id=999");
+    expect(((await none.json()) as { tenants: unknown[] }).tenants).toEqual([]);
+  });
+
+  it("matches the scoped id even when it differs from the account id", async () => {
+    const { env, ctx } = makeHostedEnv();
+    const { tenant } = await createTenant(env, { publik_user_id: "u1", meta_app_kind: "publik" });
+    await env.DB.prepare("UPDATE tenants SET ig_user_id = '1784', ig_scoped_user_id = '2650' WHERE tenant_id = ?").bind(tenant.tenant_id).run();
+    for (const id of ["1784", "2650"]) {
+      const body = (await (await call(env, ctx, "GET", `/hosted/tenants?ig_user_id=${id}`)).json()) as { tenants: Array<{ tenant_id: string }> };
+      expect(body.tenants.map((t) => t.tenant_id), id).toEqual([tenant.tenant_id]);
+    }
+  });
+
+  it("needs the admin token", async () => {
+    const { env, ctx } = makeHostedEnv();
+    const res = await call(env, ctx, "GET", "/hosted/tenants?ig_user_id=1784", undefined, null);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("DELETE /hosted/tenants/{id}", () => {
+  it("lets the tenant's object report its last usage and forget its alarm, then erases the rows", async () => {
+    const { env, ctx, dispatches } = makeHostedEnv();
+    const { tenant } = await createTenant(env, { publik_user_id: "u1", meta_app_kind: "publik" });
+    const res = await call(env, ctx, "DELETE", `/hosted/tenants/${tenant.tenant_id}`);
+    expect(res.status).toBe(200);
+    expect(dispatches.map((d) => d.path)).toEqual(["/retire"]);
+    expect(await getTenant(env.DB, tenant.tenant_id)).toBeNull();
+  });
+});
+
 describe("POST /hosted/tenants/{id}/oauth", () => {
   it("stores the token encrypted for that tenant, marks it active and arms, without asking Meta for deliveries", async () => {
     const { env, ctx, dispatches } = makeHostedEnv({ APP_ID: "app-1", APP_SECRET: "secret-1" });

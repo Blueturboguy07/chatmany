@@ -17,6 +17,7 @@ import {
   getTenant,
   getTenantByIgUser,
   listTenants,
+  listTenantsByInstagramUser,
   listTenantsByPublikUser,
   listTenantsForTick,
   patchTenant,
@@ -229,8 +230,14 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
     }
     if (method === "GET") {
       // publik finds a creator's tenant by its own user id, so it needs no table of its own.
+      // Meta's data-deletion callback finds it by the Instagram id Meta names (either id).
       const publikUserId = url.searchParams.get("publik_user_id");
-      const rows = publikUserId ? await listTenantsByPublikUser(env.DB, publikUserId) : await listTenants(env.DB);
+      const igUserId = url.searchParams.get("ig_user_id");
+      const rows = publikUserId
+        ? await listTenantsByPublikUser(env.DB, publikUserId)
+        : igUserId
+          ? await listTenantsByInstagramUser(env.DB, igUserId)
+          : await listTenants(env.DB);
       return json({ tenants: rows.map(publicView) });
     }
     return json({ error: "method not allowed" }, 405);
@@ -245,7 +252,12 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
     if (!action && method === "GET") return json({ tenant: publicView(tenant) });
 
     if (!action && method === "DELETE") {
-      // Meta's data-deletion path: the tenant's rows go, then the registry row.
+      // Disconnect and Meta's data-deletion path. First the tenant's object reports its last usage
+      // and forgets its queue and alarm (best effort), then the tenant's rows go, then the
+      // registry row. No call is made to Meta.
+      await callTenant(env, tenantId, "/retire", {}).catch((e: unknown) => {
+        console.warn(`[chatmany] ${tenantId}: retire failed before erase (${e instanceof Error ? e.message : String(e)})`);
+      });
       await new TenantDb(env.DB, tenantId).eraseAll();
       await deleteTenant(env.DB, tenantId);
       return json({ ok: true, deleted: tenantId });

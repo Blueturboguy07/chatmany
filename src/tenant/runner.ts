@@ -30,8 +30,17 @@ import { SendQueue } from "../queue/queue";
 import type { NormalizedComment, NormalizedEvent, NormalizedMessage } from "../types";
 import { toUnixSeconds } from "../runtime";
 import type { TenantDb } from "./db";
-import type { MeterStorage, UsageMeter } from "./metering";
+import type { BalanceGate } from "./balance";
+import type { CreditState, MeterStorage, UsageMeter } from "./metering";
 import { UNIT_EVENT, UNIT_POLL, UNIT_SEND } from "./metering";
+
+/**
+ * Instagram accepts a private reply only within 7 days of the comment (engine.ts). A comment older
+ * than that can never get a DM, so it is not read into the engine and not metered: the creator
+ * does not pay for history, and a comment whose processed row was deleted by the 90-day retention
+ * job (retention.ts) cannot come back as a new one.
+ */
+export const ACTIONABLE_COMMENT_SECONDS = 7 * 86400;
 
 export interface RunnerLimits {
   /** Outbound Graph calls per run. The live build settled on 15-30 after the 613 spiral. */
@@ -66,6 +75,8 @@ export interface RunnerDeps {
   storage: MeterStorage;
   client: InstagramClient;
   meter: UsageMeter;
+  /** publik's answer to "can this wallet still pay?". Absent: nothing is paused for credit. */
+  balance?: BalanceGate;
   /** The connected account's IG user id, so we never answer our own comments. */
   igUserId?: string | null;
   /** Persist a status change on the tenants row (paused_credit, paused_meta, ...). */
@@ -141,9 +152,10 @@ export class TenantRunner {
       const campaigns = await this.deps.db.getActiveCampaigns();
       if (campaigns.length === 0) return await this.finish(report);
 
-      await this.deps.meter.record(UNIT_POLL, 1);
+      // Guard first: a paused tenant makes no Graph call, so it is not charged for a poll either.
       const guard = await this.guard(report);
       if (guard) return await this.finish(report);
+      await this.deps.meter.record(UNIT_POLL, 1);
 
       const ctx = await this.begin(report);
       const media = [...new Set(campaigns.map((c) => c.media_id))];
@@ -202,7 +214,7 @@ export class TenantRunner {
   flushUsage(force = false): Promise<void> {
     return this.runExclusive(async () => {
       const res = await this.deps.meter.flush(force);
-      await this.applyCredit(res.insufficientCredit);
+      await this.applyCredit(res.credit);
     });
   }
 
@@ -227,6 +239,9 @@ export class TenantRunner {
       report.skipped = "cooldown";
       return true;
     }
+    // Ask publik (cached) before any work that can send: an empty wallet sends no reply.
+    // check() remembers its own answers, so the gate's cache clock is not reset here.
+    if (this.deps.balance) await this.applyCredit(await this.deps.balance.check(), { fromGate: true });
     if (await this.isPausedForCredit()) {
       // Events keep being ingested and stored; only the sending stops, so a top-up resumes the
       // backlog in order rather than losing it.
@@ -280,16 +295,24 @@ export class TenantRunner {
       await this.deps.storage.put(K_COOLDOWN, this.now() + this.limits.rateLimitCooldownSeconds);
     }
     const res = await this.deps.meter.flush();
-    await this.applyCredit(res.insufficientCredit);
+    await this.applyCredit(res.credit);
     return report;
   }
 
-  private async applyCredit(insufficient: boolean): Promise<void> {
+  /**
+   * Pause or resume on publik's answer. `null` (no answer: nothing was reported, publik was
+   * unreachable) changes nothing. It used to be read as "can pay", so the first flush with nothing
+   * to report resumed a tenant that publik had just paused.
+   */
+  private async applyCredit(credit: CreditState, opts: { fromGate?: boolean } = {}): Promise<void> {
+    if (credit === null) return;
+    // A flush answer is publik's newest word on the wallet: the gate keeps it as a fresh check.
+    if (this.deps.balance && !opts.fromGate) await this.deps.balance.remember(credit);
     const paused = await this.isPausedForCredit();
-    if (insufficient && !paused) {
+    if (credit === "empty" && !paused) {
       await this.deps.storage.put(K_PAUSED_CREDIT, true);
-      await this.deps.onStatus?.("paused_credit", "Hosting paused — add a pack to resume");
-    } else if (!insufficient && paused) {
+      await this.deps.onStatus?.("paused_credit", "Replies paused: the publik balance is empty");
+    } else if (credit === "ok" && paused) {
       await this.deps.storage.put(K_PAUSED_CREDIT, false);
       await this.deps.onStatus?.("active", null);
     }
@@ -305,7 +328,12 @@ export class TenantRunner {
     comments: Array<{ id: string; text?: string; timestamp?: string; username?: string; from?: { id: string; username?: string } }>,
     campaigns: Awaited<ReturnType<TenantDb["getActiveCampaigns"]>>,
   ): Promise<void> {
-    const fresh = comments.filter((c) => c.id && c.from?.id && c.from.id !== this.deps.igUserId);
+    const oldest = this.now() - ACTIONABLE_COMMENT_SECONDS;
+    const fresh = comments.filter((c) => {
+      if (!c.id || !c.from?.id || c.from.id === this.deps.igUserId) return false;
+      const at = toUnixSeconds(c.timestamp);
+      return !(at > 0 && at < oldest);
+    });
     if (fresh.length === 0) return;
     const seen = await this.deps.db.processedCommentIds(fresh.map((c) => c.id));
     for (const c of fresh) {
