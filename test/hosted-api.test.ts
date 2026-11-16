@@ -184,11 +184,12 @@ describe("GET /hosted/tenants?ig_user_id= (Meta's data-deletion callback)", () =
 
     const row = (await getTenant(env.DB, tenant.tenant_id))!;
     expect(row.ig_scoped_user_id).toBe("178414");
-    for (const id of ["178414"]) {
-      const res = await call(env, ctx, "GET", `/hosted/tenants?ig_user_id=${id}`);
-      const body = (await res.json()) as { tenants: Array<{ tenant_id: string }> };
-      expect(body.tenants.map((t) => t.tenant_id)).toEqual([tenant.tenant_id]);
-    }
+    const res = await call(env, ctx, "GET", "/hosted/tenants?ig_user_id=178414");
+    const body = (await res.json()) as { tenants: Array<{ tenant_id: string; ig_scoped_user_id: string | null }> };
+    expect(body.tenants.map((t) => t.tenant_id)).toEqual([tenant.tenant_id]);
+    // publik checks the match itself, so the view carries both ids (and never a token).
+    expect(body.tenants[0]!.ig_scoped_user_id).toBe("178414");
+    expect(JSON.stringify(body)).not.toContain("encrypted");
     const none = await call(env, ctx, "GET", "/hosted/tenants?ig_user_id=999");
     expect(((await none.json()) as { tenants: unknown[] }).tenants).toEqual([]);
   });

@@ -38,6 +38,8 @@ export interface TenantPublicView {
   tenant_id: string;
   publik_user_id: string | null;
   ig_user_id: string | null;
+  /** The Instagram-scoped id Meta's data-deletion callback names (0006); null before the next connect. */
+  ig_scoped_user_id: string | null;
   username: string | null;
   mode: TenantMode;
   status: TenantStatus;
@@ -52,6 +54,7 @@ export function publicView(t: TenantRow): TenantPublicView {
     tenant_id: t.tenant_id,
     publik_user_id: t.publik_user_id,
     ig_user_id: t.ig_user_id,
+    ig_scoped_user_id: t.ig_scoped_user_id ?? null,
     username: t.username,
     mode: t.mode,
     status: t.status,
