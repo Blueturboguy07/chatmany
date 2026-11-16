@@ -50,6 +50,8 @@ export interface EngineHooks {
   onSendAttempt?(label: string): void;
   /** Instagram answered 429 / code 613 & friends: this account must cool down. */
   onRateLimit?(label: string): void;
+  /** A send failed and nothing was delivered: what kind, Meta's codes, and Meta's own words. */
+  onSendFailure?(label: string, failure: string, tag: string, message: string): void;
   /** This comment will never accept a DM (2534001 & co) — dead-lettered, not retried. */
   onPermanentRefusal?(commentId: string, tag: string): void;
   /** Return true once the run's send budget is spent; the engine then stops attempting sends. */
@@ -464,6 +466,7 @@ export class Engine {
       }
       if (claimKey) await this.store.releaseSend(claimKey);
       if (failure === "rate_limited") this.hooks.onRateLimit?.(label);
+      this.hooks.onSendFailure?.(label, failure, tag, e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200));
       console.warn(`[chatmany] send failed (${label}, ${failure}, ${tag})`);
       return { ok: false, failure, tag };
     }

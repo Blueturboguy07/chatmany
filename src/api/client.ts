@@ -6,7 +6,14 @@
 const GRAPH_HOST = "https://graph.instagram.com";
 
 /** Meta error codes that indicate rate limiting / throttling (Section 10). */
-const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80007]);
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80007, 368]);
+
+/**
+ * Instagram's spam limit on the account ("We limit how often you can post, comment or do other
+ * things in a given amount of time"). Seen 2026-11-16 on a private reply. It is not a refusal of
+ * one message: the account must stop for a while. Retrying every poll makes the limit last longer.
+ */
+const SPAM_LIMIT_TEXT = /limit how often you can|temporarily blocked|action blocked/i;
 
 export class InstagramApiError extends Error {
   constructor(
@@ -22,7 +29,7 @@ export class InstagramApiError extends Error {
 
   /** True when the platform is telling us to back off. */
   get isRateLimit(): boolean {
-    return this.status === 429 || (this.code !== undefined && RATE_LIMIT_CODES.has(this.code));
+    return this.status === 429 || (this.code !== undefined && RATE_LIMIT_CODES.has(this.code)) || SPAM_LIMIT_TEXT.test(this.message);
   }
 }
 

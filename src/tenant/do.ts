@@ -18,8 +18,8 @@ import { BalanceGate, readBalanceState } from "./balance";
 import { UsageMeter, readMeterState } from "./metering";
 
 /** Which build this object runs; shown by the /meter diagnostic so a deploy can be confirmed live. */
-export const BUILD = "scale-1";
-import { K_GRAPH_USAGE, TenantRunner } from "./runner";
+export const BUILD = "scale-2";
+import { K_GRAPH_USAGE, K_LAST_SEND_FAILURE, TenantRunner } from "./runner";
 import {
   getTenant,
   patchTenant,
@@ -149,6 +149,8 @@ export class TenantDO implements DurableObject {
             alarm: await this.ctx.storage.getAlarm(),
           },
           graph_usage: (await this.ctx.storage.get(K_GRAPH_USAGE)) ?? null,
+          last_send_failure: (await this.ctx.storage.get(K_LAST_SEND_FAILURE)) ?? null,
+          cooldown_until: (await this.ctx.storage.get("rate_limited_until")) ?? null,
           media_hot: (await this.ctx.storage.get("media_hot")) ?? null,
           meter: await readMeterState(this.ctx.storage),
           balance: await readBalanceState(this.ctx.storage),

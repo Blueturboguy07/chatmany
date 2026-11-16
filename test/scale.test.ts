@@ -108,3 +108,26 @@ describe("Instagram's rate-limit header", () => {
     expect(usagePercent("not json")).toBeNull();
   });
 });
+
+describe("Instagram's spam limit", () => {
+  it("stops the tenant and doubles the wait while it lasts", async () => {
+    const { InstagramApiError } = await import("../src/api/client");
+    const err = new InstagramApiError("We limit how often you can post, comment or do other things in a given amount of time", 400, 100);
+    expect(err.isRateLimit).toBe(true);
+    await db.upsertCampaign(campaign({ campaign_id: "a", media_id: "m1" }));
+    client.seedComments("m1", [[{ id: "s1", text: "link", igsid: "p1" }]]);
+    client.rateLimitNext.privateReplyText = 5;
+    const t0 = Math.floor(Date.now() / 1000);
+    const first = await runner.runPoll();
+    expect(first.rateLimited).toBe(true);
+    const until1 = (await storage.get<number>("rate_limited_until"))!;
+    expect(until1 - t0).toBeGreaterThanOrEqual(179);
+    expect(until1 - t0).toBeLessThan(200);
+    expect((await runner.runPoll()).skipped).toBe("cooldown");
+    await storage.put("rate_limited_until", 0);
+    await runner.runPoll();
+    const until2 = (await storage.get<number>("rate_limited_until"))!;
+    expect(until2 - t0).toBeGreaterThanOrEqual(359);
+    expect(await storage.get("last_send_failure")).toMatchObject({ failure: "rate_limited" });
+  });
+});

@@ -120,6 +120,12 @@ const K_MEDIA_HOT = "media_hot";
 const K_COLD_IDX = "media_cold_idx";
 /** Instagram's last rate-limit header for this tenant: {at, percent, raw}. Read by /meter. */
 export const K_GRAPH_USAGE = "graph_usage";
+/** The last failed send: {at, label, failure, tag, message}. No handle, no IGSID. Read by /meter. */
+export const K_LAST_SEND_FAILURE = "last_send_failure";
+/** How many cooldowns in a row ended in another rate limit. Each one doubles the next cooldown. */
+const K_COOLDOWN_STREAK = "rate_limited_streak";
+/** The longest cooldown, however long the streak. */
+export const MAX_COOLDOWN_SECONDS = 60 * 60;
 /** Newest inbound DM time (unix seconds) the message poll has read. */
 const K_MSG_CURSOR = "msg_poll_cursor";
 /** Look-back under the message cursor, as the single-tenant poller (src/poller/messagePoll.ts). */
@@ -305,6 +311,9 @@ export class TenantRunner {
       onRateLimit: () => {
         report.rateLimited = true;
       },
+      onSendFailure: (label, failure, tag, message) => {
+        void this.deps.storage.put(K_LAST_SEND_FAILURE, { at: this.now(), label, failure, tag, message });
+      },
       sendsExhausted: () =>
         report.sends >= this.limits.maxSendsPerRun ||
         report.sends >= ctx.hourRemaining ||
@@ -374,7 +383,15 @@ export class TenantRunner {
 
   private async finish(report: RunReport): Promise<RunReport> {
     if (report.rateLimited) {
-      await this.deps.storage.put(K_COOLDOWN, this.now() + this.limits.rateLimitCooldownSeconds);
+      // 3 minutes, then 6, 12, ... up to an hour while Instagram keeps saying stop. One fixed
+      // 3-minute wait retried a spam-limited account 20 times an hour.
+      const streak = (await this.deps.storage.get<number>(K_COOLDOWN_STREAK)) ?? 0;
+      const wait = Math.min(MAX_COOLDOWN_SECONDS, this.limits.rateLimitCooldownSeconds * 2 ** Math.min(streak, 10));
+      await this.deps.storage.put(K_COOLDOWN, this.now() + wait);
+      await this.deps.storage.put(K_COOLDOWN_STREAK, streak + 1);
+    } else if (report.sends > 0) {
+      // A run that sent with no rate limit ends the streak.
+      if ((await this.deps.storage.get<number>(K_COOLDOWN_STREAK)) ?? 0) await this.deps.storage.put(K_COOLDOWN_STREAK, 0);
     }
     const res = await this.deps.meter.flush();
     await this.applyCredit(res.credit);
@@ -538,11 +555,12 @@ interface RunContext {
 
 /**
  * The highest percent in an X-Business-Use-Case-Usage or X-App-Usage header, or null when the
- * header holds none. Both are JSON; the figures are call_count, total_cputime and total_time.
+ * header holds none. Both are JSON; the figures are call_count, total_cputime and total_time (Facebook Login) or call_volume and cpu_time
+ * (Instagram Login, seen live 2026-11-16).
  */
 export function usagePercent(raw: string): number | null {
   let max: number | null = null;
-  const re = /"(call_count|total_cputime|total_time)"\s*:\s*(\d+(?:\.\d+)?)/g;
+  const re = /"(call_count|total_cputime|total_time|call_volume|cpu_time)"\s*:\s*(\d+(?:\.\d+)?)/g;
   for (let m = re.exec(raw); m; m = re.exec(raw)) {
     const n = Number(m[2]);
     if (Number.isFinite(n) && (max === null || n > max)) max = n;
