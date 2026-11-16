@@ -42,7 +42,8 @@ mkdirSync(OUT, { recursive: true });
 const FAKE_TOKEN = `pat_chatmany_${randomBytes(16).toString("hex")}`;
 const FAKE_KEY = `pk_test_${randomBytes(16).toString("hex")}`;
 const CLAIM_CODE = "ABCD-EFGH";
-const RUN_TIMEOUT_MS = 180_000;
+// The sign_in run tours the whole workspace; under Rosetta (x64 on an arm64 runner) it takes minutes.
+const RUN_TIMEOUT_MS = 360_000;
 /**
  * The version the app must report: this folder's package.json, or
  * CHATMANY_SMOKE_EXPECT_VERSION when the app is a release built from another

@@ -273,6 +273,8 @@ async function workspaceTour(ctx: {
   // Automations: the numbers loaded, the list loaded (empty: one sentence, one action).
   await waitFor(async () => (await count("[data-summary-tile]")) === 3 && !(await has("[data-summary-tile] [data-slot=skeleton]")) && (await has("[data-new-automation]")), 15_000);
   await delay(800);
+  // "Instagram is connected." leaves after about 4 seconds; the screenshots show the page under it.
+  await waitFor(async () => (await count("[data-sonner-toast]")) === 0, 8_000);
   const ws = await text();
   texts.push(ws);
   writeFileSync(join(outDir, "workspace.txt"), ws);

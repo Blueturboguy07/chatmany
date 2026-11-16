@@ -44,7 +44,8 @@ export function App() {
         </header>
         {gate.screen === "signed_in" ? <Home /> : <Gate view={gate} />}
       </div>
-      <Toaster position="bottom-right" />
+      {/* At the top, under the header: at the bottom a toast would cover the builder's Save button. */}
+      <Toaster position="top-center" offset={{ top: 60 }} mobileOffset={{ top: 60 }} />
     </TooltipProvider>
   );
 }
