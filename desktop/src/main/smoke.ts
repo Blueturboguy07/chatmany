@@ -1,4 +1,4 @@
-import { BrowserWindow, type NativeImage } from "electron";
+import { BrowserWindow, nativeTheme, type NativeImage } from "electron";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PublikGate } from "./publik";
@@ -119,6 +119,23 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
     return !image.isEmpty();
   };
   const noKey = (text: string) => !/pk_(live|test)_/.test(text);
+  /** The same screen with the system in dark mode: the page follows prefers-color-scheme. */
+  const captureDark = async (name: string) => {
+    nativeTheme.themeSource = "dark";
+    try {
+      let background = "";
+      const followed = await waitFor(async () => {
+        const media = await js<boolean>(`matchMedia("(prefers-color-scheme: dark)").matches`);
+        background = await js<string>("getComputedStyle(document.body).backgroundColor");
+        const rgb = (background.match(/\d+/g) ?? []).slice(0, 3).map(Number);
+        return media && rgb.length === 3 && rgb.every((v) => v < 80);
+      }, 5_000);
+      return { followed, background, shot: await capture(`${name}-dark`) };
+    } finally {
+      nativeTheme.themeSource = "system";
+      await delay(200);
+    }
+  };
 
   try {
     await waitFor(() => !win.webContents.isLoading(), 30_000);
@@ -129,6 +146,9 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
     const text = await js<string>("document.body.innerText");
     writeFileSync(join(config.outDir, `${wanted}.txt`), text);
     check("a screenshot of the first screen was taken", await capture(wanted));
+    const dark = await captureDark(wanted);
+    check("in dark mode the screen turns dark", dark.followed, dark.background);
+    check("a dark mode screenshot was taken", dark.shot);
     check("the screen text holds no key", noKey(text));
 
     if (wanted === "sign_in") {
@@ -178,6 +198,8 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
       const after = await js<string>("document.body.innerText");
       writeFileSync(join(config.outDir, "connect.txt"), after);
       check("a screenshot after sign-in was taken", await capture("connect"));
+      const darkConnect = await captureDark("connect");
+      check("in dark mode the screen after sign-in turns dark", darkConnect.followed && darkConnect.shot, darkConnect.background);
       check("the Connect Instagram button is there", after.includes("Connect Instagram"));
       check("the screen after sign-in holds no key", noKey(after));
       check("the main process holds the key only after sign-in", gate.signedInKey() !== null);
