@@ -167,6 +167,8 @@ export interface NormalizedComment {
 export interface NormalizedMessage {
   kind: "message";
   igsid: string;
+  /** Instagram's id for this message (webhook `mid`, conversation API `id`), when the transport gives one. */
+  message_id?: string;
   text?: string;
   /** Postback / quick-reply payload if the transport exposes it (webhooks do; polling may not). */
   payload?: string;

@@ -25,6 +25,7 @@ async function seed(d1: D1Database, tenant: string, at: number, tag: string) {
     .bind(tenant, `cm-${tag}`, at)
     .run();
   await d1.prepare("INSERT INTO send_claims (tenant_id, key, created_at) VALUES (?, ?, ?)").bind(tenant, `k-${tag}`, at).run();
+  await d1.prepare("INSERT INTO metered_events (tenant_id, event_key, created_at) VALUES (?, ?, ?)").bind(tenant, `c:cm-${tag}`, at).run();
   await d1
     .prepare(
       "INSERT INTO conversations (tenant_id, igsid, campaign_id, state, username, email, updated_at, created_at) VALUES (?, ?, 'c1', 'DONE', ?, ?, ?, ?)",

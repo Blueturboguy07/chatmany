@@ -9,6 +9,7 @@
 //   processed_comments  created_at   which comment was handled, and by whom
 //   comment_actions     created_at   the public reply / like ledger per comment
 //   send_claims         created_at   the once-only send keys
+//   metered_events      created_at   the once-only billing keys (a comment or message id)
 //   conversations       updated_at   the people list: Instagram-scoped id, username, email if given
 //
 // What stays: automations (the creator deletes those), the tenant row (disconnect deletes it),
@@ -32,6 +33,7 @@ export const RETAINED_TABLES: ReadonlyArray<readonly [string, string]> = [
   ["processed_comments", "created_at"],
   ["comment_actions", "created_at"],
   ["send_claims", "created_at"],
+  ["metered_events", "created_at"],
   ["conversations", "updated_at"],
 ];
 

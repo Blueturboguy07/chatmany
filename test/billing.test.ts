@@ -11,6 +11,7 @@ import { BalanceGate, EMPTY_RECHECK_SECONDS, OK_RECHECK_SECONDS } from "../src/t
 import { TenantDb } from "../src/tenant/db";
 import { UNIT_EVENT, UNIT_POLL, UsageMeter } from "../src/tenant/metering";
 import { TenantRunner } from "../src/tenant/runner";
+import type { RunnerLimits } from "../src/tenant/runner";
 import type { Campaign } from "../src/types";
 import { FakeClient } from "./helpers/fakeClient";
 import { makeTestDb } from "./helpers/fakeD1";
@@ -39,6 +40,11 @@ class FakePublik {
   }) as unknown as typeof fetch;
 }
 
+/** chatmany.event units publik was sent, summed over every flush. */
+function chargedEvents(publik: FakePublik): number {
+  return publik.usage.flatMap((u) => u.units).filter((u) => u.slug === UNIT_EVENT).reduce((n, u) => n + u.units, 0);
+}
+
 function campaign(over: Partial<Campaign> = {}): Campaign {
   return {
     campaign_id: "c1",
@@ -51,7 +57,7 @@ function campaign(over: Partial<Campaign> = {}): Campaign {
   } as Campaign;
 }
 
-function harness(opts: { comments?: number; now?: () => number; ageSeconds?: number } = {}) {
+function harness(opts: { comments?: number; now?: () => number; ageSeconds?: number; limits?: Partial<RunnerLimits> } = {}) {
   const d1 = makeTestDb();
   const db = new TenantDb(d1, "t_bill");
   const storage = new FakeStorage();
@@ -77,7 +83,7 @@ function harness(opts: { comments?: number; now?: () => number; ageSeconds?: num
     meter,
     balance,
     igUserId: "owner",
-    limits: { sendIntervalMs: 0 },
+    limits: { sendIntervalMs: 0, ...(opts.limits ?? {}) },
     now: clock,
     onStatus: async (status) => {
       statuses.push(status);
@@ -214,25 +220,44 @@ describe("what is metered", () => {
     let now = Math.floor(Date.now() / 1000);
     const h = harness({ comments: 0, now: () => now });
     await h.db.upsertCampaign(campaign(), true);
+    h.client.conversations = [{ id: "cv1", messages: { data: [] } }];
+    await h.runner.runPoll(); // the first read starts the message cursor
+    now += 15;
     const at = new Date(now * 1000 - 5_000).toISOString();
-    h.client.conversations = [
-      { id: "cv1", messages: { data: [{ id: "m1", from: { id: "u7" }, message: "hello", created_time: at }, { id: "m0", from: { id: "owner" }, message: "ours", created_time: at }] } },
+    h.client.conversations[0]!.messages!.data = [
+      { id: "m1", from: { id: "u7" }, message: "hello", created_time: at },
+      { id: "m0", from: { id: "owner" }, message: "ours", created_time: at },
     ];
     for (let i = 0; i < 4; i++) {
       await h.runner.runPoll();
       now += 15;
     }
     await h.runner.flushUsage(true);
-    const events = h.publik.usage.flatMap((u) => u.units).filter((u) => u.slug === UNIT_EVENT).reduce((n, u) => n + u.units, 0);
-    expect(events).toBe(1);
+    expect(chargedEvents(h.publik)).toBe(1);
 
     // A new message in the same conversation is charged once more.
     h.client.conversations[0]!.messages!.data!.unshift({ id: "m2", from: { id: "u7" }, message: "again", created_time: new Date(now * 1000).toISOString() });
     await h.runner.runPoll();
     await h.runner.runPoll();
     await h.runner.flushUsage(true);
-    const after = h.publik.usage.flatMap((u) => u.units).filter((u) => u.slug === UNIT_EVENT).reduce((n, u) => n + u.units, 0);
-    expect(after).toBe(2);
+    expect(chargedEvents(h.publik)).toBe(2);
+  });
+
+  it("does not charge the DMs that were in the inbox before the first read", async () => {
+    let now = Math.floor(Date.now() / 1000);
+    const h = harness({ comments: 0, now: () => now });
+    await h.db.upsertCampaign(campaign(), true);
+    const old = new Date(now * 1000 - 3_600_000).toISOString();
+    h.client.conversations = Array.from({ length: 20 }, (_, i) => ({
+      id: `cv${i}`,
+      messages: { data: Array.from({ length: 3 }, (_, j) => ({ id: `m${i}-${j}`, from: { id: `u${i}` }, message: "hi", created_time: old })) },
+    }));
+    for (let i = 0; i < 10; i++) {
+      await h.runner.runPoll();
+      now += 15;
+    }
+    await h.runner.flushUsage(true);
+    expect(chargedEvents(h.publik)).toBe(0);
   });
 
   it("does not read or charge for comments older than Instagram's 7-day reply window", async () => {
@@ -244,5 +269,53 @@ describe("what is metered", () => {
     await h.runner.flushUsage(true);
     const units = Object.fromEntries((h.publik.usage[0]?.units ?? []).map((u) => [u.slug, u.units]));
     expect(units[UNIT_EVENT]).toBeUndefined();
+  });
+});
+
+describe("each comment or DM is charged once, ever", () => {
+  it("50 comments read on 40 polls and a sweep are charged 50 times, not 2,000", async () => {
+    const h = harness({ comments: 50 });
+    await h.db.upsertCampaign(campaign({ keywords: ["nothing-matches"] }), true);
+    for (let i = 0; i < 40; i++) await h.runner.runPoll();
+    await h.runner.runSweep();
+    await h.runner.flushUsage(true);
+    expect(chargedEvents(h.publik)).toBe(50);
+  });
+
+  it("a comment whose DM waits for a retry is read on every poll and charged once", async () => {
+    const h = harness({ comments: 1 });
+    await h.db.upsertCampaign(campaign(), true);
+    h.client.failNext.privateReplyText = 3; // Instagram refuses three times, then accepts
+    for (let i = 0; i < 6; i++) await h.runner.runPoll();
+    // Three refused attempts on three polls (a refused call is not recorded), then the DM went.
+    expect(h.client.failNext.privateReplyText).toBe(0);
+    expect(h.client.calls.privateReplyText).toHaveLength(1);
+    await h.runner.flushUsage(true);
+    expect(chargedEvents(h.publik)).toBe(1);
+  });
+
+  it("deleting an automation does not charge its comments again", async () => {
+    const h = harness({ comments: 2 });
+    await h.db.upsertCampaign(campaign(), true);
+    await h.runner.runPoll();
+    await h.db.deleteCampaign("c1");
+    await h.db.upsertCampaign(campaign({ campaign_id: "c2" }), true);
+    await h.runner.runPoll();
+    await h.runner.flushUsage(true);
+    expect(chargedEvents(h.publik)).toBe(2);
+  });
+
+  it("a webhook delivered twice is charged once, and the poll does not charge it again", async () => {
+    const h = harness({ comments: 0 });
+    await h.db.upsertCampaign(campaign(), true);
+    const now = Math.floor(Date.now() / 1000);
+    const comment = { kind: "comment" as const, comment_id: "c7", igsid: "u7", text: "link", media_id: "media-1", timestamp: now };
+    const dm = { kind: "message" as const, igsid: "u8", message_id: "mid.1", text: "hi", timestamp: now };
+    expect((await h.runner.handleEvents([comment, dm])).events).toBe(2);
+    expect((await h.runner.handleEvents([comment, dm])).events).toBe(0);
+    h.client.seedComments("media-1", [[{ id: "c7", text: "link", igsid: "u7" }]]);
+    await h.runner.runPoll();
+    await h.runner.flushUsage(true);
+    expect(chargedEvents(h.publik)).toBe(2);
   });
 });

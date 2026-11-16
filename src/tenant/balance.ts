@@ -20,6 +20,7 @@
 // and a tenant never checked is treated as able to pay. A creator's DMs must not stop because
 // publik's API had a bad minute; an empty wallet must stop them.
 
+import { globalFetch } from "./metering";
 import type { MeterStorage } from "./metering";
 
 export type BalanceState = "ok" | "empty";
@@ -46,7 +47,8 @@ export class BalanceGate {
   private readonly now: () => number;
 
   constructor(private readonly opts: BalanceOptions) {
-    this.fetcher = opts.fetcher ?? fetch;
+    // Never the bare global: workerd refuses a fetch called as a method (see globalFetch).
+    this.fetcher = opts.fetcher ?? globalFetch;
     this.now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   }
 

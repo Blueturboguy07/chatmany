@@ -126,12 +126,14 @@ export class TenantRunner {
 
   // ---- entry points ----
 
-  /** Webhook deliveries (the default path). Events are metered whether or not they match. */
+  /**
+   * Webhook deliveries (the default path). Events are metered whether or not they match, once
+   * each: Meta delivers again when an answer is slow, and that delivery is not a new event.
+   */
   handleEvents(events: NormalizedEvent[]): Promise<RunReport> {
     return this.runExclusive(async () => {
       const report = this.newReport();
-      await this.deps.meter.record(UNIT_EVENT, events.length);
-      report.events = events.length;
+      for (const evt of events) await this.meterEventOnce(report, eventKey(evt));
       const guard = await this.guard(report);
       if (guard) return await this.finish(report);
 
@@ -340,12 +342,16 @@ export class TenantRunner {
     });
     if (fresh.length === 0) return;
     const seen = await this.deps.db.processedCommentIds(fresh.map((c) => c.id));
-    for (const c of fresh) {
+    const unseen = fresh.filter((c) => !seen.has(c.id));
+    if (unseen.length === 0) return;
+    // A comment stays unprocessed while its DM waits for a retry (rate limit, send budget, hourly
+    // cap), and comes back unprocessed when its automation is deleted. It is read again on every
+    // poll and sweep, and used to be charged again each time. Now it is charged the first time only.
+    const charged = await this.deps.db.meteredEventKeys(unseen.map((c) => commentKey(c.id)));
+    for (const c of unseen) {
       if (this.outOfBudget(ctx, report)) return;
-      if (seen.has(c.id)) continue;
       ctx.newComments++;
-      report.events++;
-      await this.deps.meter.record(UNIT_EVENT, 1);
+      await this.meterEventOnce(report, commentKey(c.id), charged);
       const evt: NormalizedComment = {
         kind: "comment",
         comment_id: c.id,
@@ -375,9 +381,15 @@ export class TenantRunner {
     // Every poll reads the same 20 conversations again. The engine ignores a message it already
     // acted on, but each read used to be metered as a new event, so one DM was billed every 15
     // seconds for as long as it stayed in the newest 20. Now a message is read again only inside
-    // a short look-back under the cursor, and metered only the first time it is seen.
+    // a short look-back under the cursor, is charged only when it is newer than the cursor, and
+    // only once ever (its id in metered_events).
+    //
+    // The first read has no cursor. Everything it finds was in the inbox before chatmany watched
+    // it, so it is not charged: the cursor starts at the read time (or the newest message, if a
+    // clock runs ahead), and only messages after that count.
     const cursor = (await this.deps.storage.get<number>(K_MSG_CURSOR)) ?? 0;
-    let newest = cursor;
+    const firstRead = cursor === 0;
+    let newest = firstRead ? this.now() : cursor;
     try {
       for (const convo of conversations) {
         for (const m of convo.messages?.data ?? []) {
@@ -385,19 +397,28 @@ export class TenantRunner {
           const from = m.from?.id;
           if (!from || from === this.deps.igUserId) continue;
           const at = toUnixSeconds(m.created_time);
-          if (cursor > 0 && at < cursor - MSG_OVERLAP_SECONDS) continue;
-          if (at > cursor) {
-            report.events++;
-            await this.deps.meter.record(UNIT_EVENT, 1);
-          }
+          if (!firstRead && at < cursor - MSG_OVERLAP_SECONDS) continue;
+          const evt: NormalizedMessage = { kind: "message", igsid: from, ...(m.id ? { message_id: m.id } : {}), text: m.message, timestamp: at };
+          if (!firstRead && at > cursor) await this.meterEventOnce(report, eventKey(evt));
           if (at > newest) newest = at;
-          const evt: NormalizedMessage = { kind: "message", igsid: from, text: m.message, timestamp: at };
           await ctx.engine.handleMessage(evt, campaigns);
         }
       }
     } finally {
       if (newest > cursor) await this.deps.storage.put(K_MSG_CURSOR, newest);
     }
+  }
+
+  /**
+   * Charge one inbound event, the first time this tenant ever sees it. `known` is a batch lookup
+   * done up front (a page of comments); the insert is the authority either way, so two reads that
+   * race each other still charge once.
+   */
+  private async meterEventOnce(report: RunReport, key: string, known?: Set<string>): Promise<void> {
+    if (known?.has(key)) return;
+    if (!(await this.deps.db.claimMeteredEvent(key))) return;
+    report.events++;
+    await this.deps.meter.record(UNIT_EVENT, 1);
   }
 
   private async safeGetComments(
@@ -413,6 +434,18 @@ export class TenantRunner {
       return null;
     }
   }
+}
+
+/** metered_events key for a comment (schema 0007). The same from a poll, a sweep and a webhook. */
+export function commentKey(commentId: string): string {
+  return `c:${commentId}`;
+}
+
+/** metered_events key for any inbound event. A DM without an id falls back to sender, time, payload. */
+export function eventKey(evt: NormalizedEvent): string {
+  if (evt.kind === "comment") return commentKey(evt.comment_id);
+  if (evt.message_id) return `m:${evt.message_id}`;
+  return `m:${evt.igsid}:${evt.timestamp}:${evt.payload ?? ""}`;
 }
 
 interface RunContext {

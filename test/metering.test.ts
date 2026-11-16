@@ -3,9 +3,10 @@
 // Note what is NOT here: any price. The Worker counts units; publik prices them from its real
 // Cloudflare bill (see the header of src/tenant/metering.ts).
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BalanceGate } from "../src/tenant/balance";
 import { TenantDb } from "../src/tenant/db";
-import { FLUSH_UNITS, MAX_BATCHES_PER_FLUSH, UNIT_EVENT, UNIT_SEND, UsageMeter, readResult, wireKey } from "../src/tenant/metering";
+import { FLUSH_UNITS, MAX_BATCHES_PER_FLUSH, METER_VERSION, UNIT_EVENT, UNIT_POLL, UNIT_SEND, UsageMeter, readResult, wireKey } from "../src/tenant/metering";
 import { makeTestDb } from "./helpers/fakeD1";
 import { FakeStorage } from "./helpers/fakeStorage";
 
@@ -247,5 +248,110 @@ describe("idempotency keys on the wire", () => {
     expect(wireKey("t_9f2c:1758240000:ab12cd")).toBe(wireKey("t_9f2c:1758240000:ab12cd"));
     expect(wireKey("ab")).toMatch(/^[A-Za-z0-9_.-]{8,128}$/);
     expect(wireKey("x".repeat(300))).toHaveLength(128);
+  });
+});
+
+describe("the runtime's fetch", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** workerd's rule: fetch called as a method of another object throws before sending anything. */
+  function strictFetch(seen: string[]) {
+    return function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Illegal invocation: function called with incorrect `this` reference");
+      }
+      const url = String(input);
+      seen.push(url);
+      if (url.includes("/infra/balance")) return Promise.resolve(new Response(JSON.stringify({ can_pay: true }), { status: 200 }));
+      const body = JSON.parse(String(init?.body)) as { batches: WireBatch[] };
+      const key = body.batches[0]!.idempotency_key;
+      return Promise.resolve(new Response(JSON.stringify({ results: [{ idempotency_key: key, settled: true, paused: false }] }), { status: 200 }));
+    };
+  }
+
+  it("is called as a plain function, so the deployed Worker's reports and balance checks are sent", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", strictFetch(seen));
+    const db = new TenantDb(makeTestDb(), "t_one");
+    const storage = new FakeStorage();
+    const common = { publikUserId: "7c1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6", storage, endpoint: "https://publikhq.test", token: "ingest-token" };
+    // No `fetcher`: this is how the Durable Object builds both (src/tenant/do.ts).
+    const meter = new UsageMeter({ tenantId: "t_one", db, ...common });
+    const gate = new BalanceGate(common);
+
+    await meter.record(UNIT_SEND, 1);
+    const res = await meter.flush(true);
+    expect(res).toMatchObject({ delivered: 1, queued: 0, credit: "ok" });
+    expect(await db.usageForMonth()).toEqual([{ slug: UNIT_SEND, units: 1, reported: 1 }]);
+
+    expect(await gate.check()).toBe("ok");
+    expect(seen.some((u) => u.includes("/api/v1/infra/balance"))).toBe(true);
+  });
+});
+
+describe("the one-time upgrade from the old event count", () => {
+  it("drops queued and pending event units counted under the old rule, keeps polls and sends, and resets the D1 row", async () => {
+    const m = makeMeter();
+    // What the deployed version 1 left: two queued batches and pending counts, none ever reported.
+    await m.storage.put("usage:queue", [
+      { idempotency_key: "t_one:1794803100:aaaaaa", units: [{ slug: UNIT_EVENT, count: 3000, at: 1794803100 }, { slug: UNIT_POLL, count: 10, at: 1794803100 }] },
+      { idempotency_key: "t_one.1794803160.bbbbbb", units: [{ slug: UNIT_EVENT, count: 3062, at: 1794803160 }] },
+      { idempotency_key: "t_one.1794803220.cccccc", units: [{ slug: UNIT_SEND, count: 5, at: 1794803220 }] },
+    ]);
+    await m.storage.put("usage:pending", { counts: { [UNIT_EVENT]: 7, [UNIT_POLL]: 2 }, since: 1794803230 });
+    await m.db.addUsage(UNIT_EVENT, 6062);
+    await m.db.addUsage(UNIT_POLL, 10);
+    await m.db.addUsage(UNIT_SEND, 5);
+
+    const res = await m.meter.flush(true);
+    expect(res.queued).toBe(0);
+    const sent = m.calls.flatMap((c) => c.batch.units);
+    expect(sent.filter((u) => u.slug === UNIT_EVENT)).toEqual([]);
+    expect(sent.filter((u) => u.slug === UNIT_POLL).reduce((n, u) => n + u.units, 0)).toBe(12);
+    expect(sent.filter((u) => u.slug === UNIT_SEND).reduce((n, u) => n + u.units, 0)).toBe(5);
+    // The kept batches keep their keys (none was ever settled), on the wire form publik accepts.
+    expect(m.calls.map((c) => c.batch.idempotency_key).slice(0, 2)).toEqual(["t_one.1794803100.aaaaaa", "t_one.1794803220.cccccc"]);
+
+    const rows = Object.fromEntries((await m.db.usageForMonth()).map((r) => [r.slug, r]));
+    expect(rows[UNIT_EVENT]).toMatchObject({ units: 0, reported: 0 });
+    expect(rows[UNIT_POLL]).toMatchObject({ units: 12, reported: 12 });
+    expect(rows[UNIT_SEND]).toMatchObject({ units: 5, reported: 5 });
+    expect(await m.storage.get("usage:version")).toBe(METER_VERSION);
+  });
+
+  it("runs once: events counted after it are reported", async () => {
+    const m = makeMeter();
+    await m.storage.put("usage:pending", { counts: { [UNIT_EVENT]: 40 }, since: 1 });
+    await m.meter.flush(true);
+    expect(m.calls).toHaveLength(0);
+
+    // A new object over the same storage and database, as each Durable Object request builds one.
+    const sent: WireBatch[] = [];
+    const meter = new UsageMeter({
+      tenantId: "t_one",
+      publikUserId: "7c1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6",
+      storage: m.storage,
+      db: m.db,
+      endpoint: "https://publikhq.test/",
+      token: "ingest-token",
+      fetcher: (async (_url: string, init: RequestInit) => {
+        const batch = (JSON.parse(String(init.body)) as { batches: WireBatch[] }).batches[0]!;
+        sent.push(batch);
+        return new Response(JSON.stringify({ results: [{ idempotency_key: batch.idempotency_key, settled: true }] }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    await meter.record(UNIT_EVENT, 1);
+    await meter.flush(true);
+    expect(sent.flatMap((b) => b.units)).toEqual([{ slug: UNIT_EVENT, units: 1 }]);
+    expect((await m.db.usageForMonth()).find((r) => r.slug === UNIT_EVENT)).toMatchObject({ units: 1, reported: 1 });
+  });
+
+  it("leaves a new tenant alone", async () => {
+    const m = makeMeter();
+    await m.meter.record(UNIT_EVENT, 3);
+    await m.meter.flush(true);
+    expect(m.calls.flatMap((c) => c.batch.units)).toEqual([{ slug: UNIT_EVENT, units: 3 }]);
   });
 });

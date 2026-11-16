@@ -184,6 +184,34 @@ export class TenantDb {
     return out;
   }
 
+  /**
+   * Which of these event keys this tenant was already charged for (schema 0007). One query per 90
+   * keys: D1 binds at most 100 parameters per statement, and the tenant id takes one.
+   */
+  async meteredEventKeys(keys: string[]): Promise<Set<string>> {
+    const out = new Set<string>();
+    for (let i = 0; i < keys.length; i += 90) {
+      const chunk = keys.slice(i, i + 90);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => "?").join(",");
+      const rows = await this.db
+        .prepare(`SELECT event_key FROM metered_events WHERE tenant_id = ? AND event_key IN (${placeholders})`)
+        .bind(this.tenantId, ...chunk)
+        .all<{ event_key: string }>();
+      for (const r of rows.results ?? []) out.add(r.event_key);
+    }
+    return out;
+  }
+
+  /** Record that this event was charged. True only the first time, ever, for this tenant. */
+  async claimMeteredEvent(key: string): Promise<boolean> {
+    const res = await this.db
+      .prepare("INSERT OR IGNORE INTO metered_events (tenant_id, event_key, created_at) VALUES (?, ?, ?)")
+      .bind(this.tenantId, key, now())
+      .run();
+    return Number(res.meta?.changes ?? 0) > 0;
+  }
+
   async markCommentProcessed(commentId: string, igsid: string, campaignId: string): Promise<void> {
     await this.db
       .prepare(
@@ -458,6 +486,18 @@ export class TenantDb {
       .run();
   }
 
+  /**
+   * Forget units of one slug that were counted and never reported (`units` back to `reported`),
+   * in every month. Used once, by the meter's version 2 upgrade (metering.ts). Returns rows changed.
+   */
+  async forgiveUnreportedUsage(slug: string): Promise<number> {
+    const res = await this.db
+      .prepare("UPDATE usage_monthly SET units = reported, updated_at = ? WHERE tenant_id = ? AND slug = ? AND units > reported")
+      .bind(now(), this.tenantId, slug)
+      .run();
+    return Number(res.meta?.changes ?? 0);
+  }
+
   async usageForMonth(monthKey = utcMonth()): Promise<Array<{ slug: string; units: number; reported: number }>> {
     const rows = await this.db
       .prepare("SELECT slug, units, reported FROM usage_monthly WHERE tenant_id = ? AND month = ?")
@@ -470,7 +510,7 @@ export class TenantDb {
 
   /** Everything this tenant owns, for the dashboard's export button. */
   async exportAll(): Promise<Record<string, unknown[]>> {
-    const tables = ["campaigns", "conversations", "processed_comments", "comment_actions", "events", "usage_monthly"];
+    const tables = ["campaigns", "conversations", "processed_comments", "comment_actions", "events", "metered_events", "usage_monthly"];
     const out: Record<string, unknown[]> = {};
     for (const t of tables) {
       const rows = await this.db.prepare(`SELECT * FROM ${t} WHERE tenant_id = ?`).bind(this.tenantId).all();
@@ -488,6 +528,7 @@ export class TenantDb {
       "comment_actions",
       "events",
       "send_claims",
+      "metered_events",
       "kv",
       "usage_monthly",
     ];

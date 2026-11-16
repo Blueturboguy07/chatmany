@@ -32,7 +32,7 @@ would invent a charge that publik's bill does not support.
 
 | slug | one unit is |
 |---|---|
-| `chatmany.event` | one inbound comment or message processed |
+| `chatmany.event` | one inbound comment or message, counted **once ever** per tenant (the `metered_events` ledger, schema 0007). A comment read again on later polls, sweeps or webhook redeliveries is not counted again. DMs already in the inbox at the first read are not counted |
 | `chatmany.send` | one outbound Graph call **attempted** — any outcome. A private reply Instagram refuses still cost the round trip; the dashboard shows refusals separately so the creator can see why |
 | `chatmany.poll` | one polling tick for this tenant (fallback mode only; a webhook tenant has none) |
 
@@ -149,8 +149,18 @@ GET {PUBLIK_API_BASE}/api/v1/infra/balance?tenant=<publik user id>
 - No answer (publik down, a 5xx, not configured) keeps the last known state. A tenant never
   checked is treated as able to pay: a bad minute at publik must not stop a creator's replies.
 
+**Calling fetch.** Both calls go through `globalFetch` (`src/tenant/metering.ts`). Never store the
+global `fetch` on an object and call it as a method: workerd throws "Illegal invocation" before
+anything is sent. Until 2026-11-16 that is what both calls did, so no usage report and no balance
+check ever reached publik (the error was caught as "unreachable" and retried forever).
+
+**Meter version 2** (2026-11-16): the first run of this code in each tenant's object drops every
+`chatmany.event` unit counted under the old rule (pending, queued, and `units` back to `reported`
+in D1). Those units were over-counted and never reported, so none is charged. Poll and send counts
+stay queued and are reported under their own keys.
+
 **Retention**: the daily `0 3 * * *` cron deletes events, processed comments, comment actions,
-send claims and contacts (conversations) older than 90 days, across every tenant
+send claims, metered-event keys and contacts (conversations) older than 90 days, across every tenant
 (`src/tenant/retention.ts`). Comments older than Instagram's 7-day private-reply window are never
 read, so a deleted processed-comment row cannot turn into a second DM.
 

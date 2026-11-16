@@ -147,9 +147,11 @@ export function normalize(body: WebhookBody, ownIgUserId: string | null): Normal
     for (const m of entry.messaging ?? []) {
       const igsid = m.sender?.id;
       if (!igsid || igsid === ownIgUserId) continue;
+      const mid = m.message?.mid ?? m.postback?.mid;
       const evt: NormalizedMessage = {
         kind: "message",
         igsid,
+        ...(mid ? { message_id: mid } : {}),
         text: m.message?.text ?? m.postback?.title,
         payload: m.postback?.payload ?? m.message?.quick_reply?.payload,
         timestamp: m.timestamp ? Math.floor(m.timestamp / 1000) : toUnixSeconds(undefined),
@@ -419,6 +421,6 @@ interface CommentValue {
 interface MessagingEvent {
   sender?: { id?: string };
   timestamp?: number;
-  message?: { text?: string; quick_reply?: { payload?: string } };
-  postback?: { payload?: string; title?: string };
+  message?: { mid?: string; text?: string; quick_reply?: { payload?: string } };
+  postback?: { mid?: string; payload?: string; title?: string };
 }

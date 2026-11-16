@@ -3,7 +3,8 @@
 // WHAT IS METERED, AND WHY IT IS ONLY EVER A COUNT
 // -----------------------------------------------
 // Three billable classes, counted by the tenant's own Durable Object as it does the work:
-//   chatmany.event — one inbound comment or message processed
+//   chatmany.event — one inbound comment or message, counted once ever (the runner checks the
+//                    metered_events ledger, schema 0007, before it records one)
 //   chatmany.send  — one outbound Graph call ATTEMPTED (any outcome: a refused private reply
 //                    still cost the round trip; the dashboard shows refusals separately)
 //   chatmany.poll  — one polling tick for this tenant (fallback mode only)
@@ -82,6 +83,28 @@ export interface FlushResult {
 const PENDING_KEY = "usage:pending";
 const QUEUE_KEY = "usage:queue";
 const ROLLED_AT_KEY = "usage:rolledAt";
+const VERSION_KEY = "usage:version";
+
+/**
+ * Version of what this meter's stored counts mean.
+ *   1  (implicit) chatmany.event was counted on every read of a comment or DM, so one DM was
+ *      counted again on every 15-second poll while it stayed in the newest 20 conversations.
+ *   2  each comment or DM is counted once, ever (the metered_events ledger, schema 0007).
+ * Units counted under 1 were never reported (see globalFetch) and are not charged: the first run
+ * of version 2 drops them (upgrade below).
+ */
+export const METER_VERSION = 2;
+
+/**
+ * The runtime's fetch, called as a plain function.
+ *
+ * Storing the global `fetch` on an object and calling it as `this.fetcher(...)` throws
+ * "TypeError: Illegal invocation: function called with incorrect `this` reference" in workerd
+ * (Node does not care, so the unit tests passed). That is why no usage flush and no balance
+ * check ever reached publik from the deployed Worker: every call threw before a byte was sent,
+ * was caught as "unreachable", and was retried forever.
+ */
+export const globalFetch: typeof fetch = (input, init) => fetch(input, init);
 
 /** Batches delivered per flush, so a long outage drains over a few alarms, not one burst. */
 export const MAX_BATCHES_PER_FLUSH = 20;
@@ -109,17 +132,19 @@ type PostOutcome =
 export class UsageMeter {
   private pending: Pending | null = null;
   private queue: UsageBatch[] | null = null;
+  private upgraded: Promise<void> | null = null;
   private readonly fetcher: typeof fetch;
   private readonly now: () => number;
 
   constructor(private readonly opts: MeterOptions) {
-    this.fetcher = opts.fetcher ?? fetch;
+    this.fetcher = opts.fetcher ?? globalFetch;
     this.now = opts.now ?? (() => Math.floor(Date.now() / 1000));
   }
 
   /** Count units. Never throws and never blocks the work being metered. */
   async record(slug: string, count = 1): Promise<void> {
     if (count <= 0) return;
+    await this.ready();
     const p = await this.loadPending();
     p.counts[slug] = (p.counts[slug] ?? 0) + count;
     if (p.since === 0) p.since = this.now();
@@ -128,6 +153,7 @@ export class UsageMeter {
 
   /** True when the pending counts have reached either flush threshold. */
   async due(): Promise<boolean> {
+    await this.ready();
     const p = await this.loadPending();
     const total = Object.values(p.counts).reduce((a, b) => a + b, 0);
     if (total === 0) return (await this.loadQueue()).length > 0;
@@ -141,8 +167,66 @@ export class UsageMeter {
    * next alarm. The DM that was already sent has been sent.
    */
   async flush(force = false): Promise<FlushResult> {
+    await this.ready();
     if (force || (await this.due())) await this.roll();
     return await this.deliver();
+  }
+
+  /** Run the one-time upgrade (below) before this meter reads or writes any count. */
+  private ready(): Promise<void> {
+    this.upgraded ??= this.upgrade();
+    return this.upgraded;
+  }
+
+  /**
+   * Version 1 counts of chatmany.event are wrong (one DM counted on every poll) and were never
+   * reported, so they are dropped, once: from the pending counts, from every queued batch, and
+   * from D1 (`units` back to `reported` for that slug). Poll and send counts were right and stay
+   * queued, under their own idempotency keys. Nothing of version 1 ever reached publik (every
+   * report threw before it was sent), so no batch here was settled before and none is settled
+   * twice.
+   *
+   * It runs before this meter records anything, and only the tenant's own object writes its
+   * usage rows, so the D1 correction cannot remove a version 2 count.
+   */
+  private async upgrade(): Promise<void> {
+    const storage = this.opts.storage;
+    if (((await storage.get<number>(VERSION_KEY)) ?? 1) >= METER_VERSION) return;
+
+    let dropped = 0;
+    const pending = await this.loadPending();
+    if (pending.counts[UNIT_EVENT]) {
+      dropped += pending.counts[UNIT_EVENT]!;
+      delete pending.counts[UNIT_EVENT];
+      if (!Object.values(pending.counts).some((n) => n > 0)) pending.since = 0;
+      await storage.put(PENDING_KEY, pending);
+    }
+    const queue = await this.loadQueue();
+    const kept: UsageBatch[] = [];
+    for (const batch of queue) {
+      const units = batch.units.filter((u) => {
+        if (u.slug !== UNIT_EVENT) return true;
+        dropped += u.count;
+        return false;
+      });
+      if (units.length > 0) kept.push({ ...batch, units });
+    }
+    this.queue = kept;
+    await storage.put(QUEUE_KEY, kept);
+    await storage.put(VERSION_KEY, METER_VERSION);
+    // The queue is what gets charged, and it is already right. The D1 row is the operator's view;
+    // a failure here is logged and never stops the tenant's work.
+    let rows = 0;
+    try {
+      rows = await this.opts.db.forgiveUnreportedUsage(UNIT_EVENT);
+    } catch (e) {
+      console.warn(`[chatmany] ${this.opts.tenantId}: could not reset the old ${UNIT_EVENT} count in D1 (${e instanceof Error ? e.message : String(e)})`);
+    }
+    if (dropped > 0 || rows > 0) {
+      console.warn(
+        `[chatmany] ${this.opts.tenantId}: meter v${METER_VERSION} dropped ${dropped} queued ${UNIT_EVENT} units counted under the old rule (never reported, not charged); ${rows} month row(s) reset to the reported count`,
+      );
+    }
   }
 
   /** True when this tenant's usage can reach publik at all. */
