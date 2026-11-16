@@ -66,7 +66,7 @@ describe("the sign-in gate", () => {
     await h.gate.start();
     expect(h.gate.current()).toEqual({ screen: "sign_in", note: null, waiting: false });
     const mint = h.calls.find((c) => c.path === "/api/v1/installs")!;
-    expect(mint.body).toMatchObject({ app_token: TOKEN, app_slug: "chatmany", app_version: "0.1.0", os: "macos", arch: "arm64", disclosure_version: 1 });
+    expect(mint.body).toMatchObject({ app_token: TOKEN, app_slug: "chatmany", app_version: "0.1.1", os: "macos", arch: "arm64", disclosure_version: 1 });
     expect(h.stored()?.key).toBe(KEY);
     // No key for anything else while the install is not signed in.
     expect(h.gate.signedInKey()).toBeNull();
@@ -93,7 +93,7 @@ describe("the sign-in gate", () => {
     expect(h.gate.signedInKey()).toBe(KEY);
     const event = h.calls.find((c) => c.path === "/api/v1/telemetry")!;
     expect(event.auth).toBe(`Bearer ${KEY}`);
-    expect(event.body).toMatchObject({ v: 1, app: "chatmany", event: "app_opened", app_version: "0.1.0", os: "macos" });
+    expect(event.body).toMatchObject({ v: 1, app: "chatmany", event: "app_opened", app_version: "0.1.1", os: "macos" });
   });
 
   it("stops asking after 10 minutes and says so", async () => {

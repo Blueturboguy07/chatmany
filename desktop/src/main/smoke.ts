@@ -17,7 +17,8 @@ import type { PublikGate } from "./publik";
  *      the window never sees a key;
  *   3. (expect=sign_in) Sign in with publik opens publik's claim page in the
  *      system browser, and once publik says the install is claimed the app
- *      shows Connect Instagram.
+ *      shows Connect Instagram; then the connect, "I cancelled, start again",
+ *      and a tour of the workspace (see workspaceTour), with screenshots.
  *
  * Only a fake publik on 127.0.0.1 is ever called (scripts/smoke.mjs runs it):
  * the flag never points the app at a real server, and it cannot open the
@@ -222,18 +223,7 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
       await fetch(`${config.origin}/fake/instagram-approved`).catch(() => undefined);
       const connected = await waitFor(async () => (await screen()) === "workspace", 20_000);
       check("after Instagram, the app shows the workspace", connected, await screen());
-      await waitFor(() => js<boolean>(`Boolean(document.querySelector("[data-chatmany-usage]")) && Boolean(document.querySelector("[data-summary-tile]"))`), 10_000);
-      await delay(800);
-      const ws = await js<string>("document.body.innerText");
-      writeFileSync(join(config.outDir, "workspace.txt"), ws);
-      check("an empty balance shows the paused notice", ws.includes("Replies are paused") && (await js<boolean>(`Boolean(document.querySelector("[data-chatmany-no-balance]"))`)));
-      check("the workspace shows What chatmany uses, in percent, with the bar", ws.includes("What chatmany uses") && /\d+%/.test(ws) && (await js<boolean>(`Boolean(document.querySelector("[data-usage-bar]"))`)));
-      check("the workspace shows no money amount", !/[$€£]\s?\d/.test(ws), ws.match(/[$€£]\s?\d[\d.,]*/)?.[0]);
-      check("the People list has the CSV download", await js<boolean>(`Boolean(document.querySelector("[data-export]"))`));
-      check("the workspace text holds no key", noKey(ws));
-      check("a screenshot of the workspace was taken", await capture("workspace"));
-      const darkWorkspace = await captureDark("workspace");
-      check("in dark mode the workspace turns dark", darkWorkspace.followed && darkWorkspace.shot, darkWorkspace.background);
+      await workspaceTour({ js, capture, captureDark, check, win, outDir: config.outDir, noKey });
     }
   } catch (error) {
     check("the smoke run finished", false, error instanceof Error ? error.message : String(error));
@@ -243,3 +233,111 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
   writeFileSync(join(config.outDir, "result.json"), `${JSON.stringify({ expect: config.expect, ok, checks }, null, 2)}\n`);
   return ok ? 0 : 1;
 }
+
+type Js = <T>(code: string) => Promise<T>;
+type Capture = (name: string) => Promise<boolean>;
+type CaptureDark = (name: string) => Promise<{ followed: boolean; background: string; shot: boolean }>;
+
+/**
+ * The connected workspace, as the person goes through it: the Automations
+ * tab (three numbers, the paused notice), New automation (post grid,
+ * preview, Save in view, Cancel asks first), People (CSV), Account (usage in
+ * percent, Disconnect asks first and Keep it connected sends nothing), then
+ * all three tabs at the 390 px minimum width. Light and dark screenshots.
+ */
+async function workspaceTour(ctx: {
+  js: Js;
+  capture: Capture;
+  captureDark: CaptureDark;
+  check: (name: string, ok: unknown, detail?: unknown) => void;
+  win: BrowserWindow;
+  outDir: string;
+  noKey: (text: string) => boolean;
+}): Promise<void> {
+  const { js, capture, captureDark, check, win, outDir, noKey } = ctx;
+  const has = (selector: string) => js<boolean>(`Boolean(document.querySelector(${JSON.stringify(selector)}))`);
+  const count = (selector: string) => js<number>(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
+  const click = (selector: string) => js(`(document.querySelector(${JSON.stringify(selector)})?.click(), true)`);
+  const text = () => js<string>("document.body.innerText");
+  const texts: string[] = [];
+  const shoot = async (name: string, what: string) => {
+    check(`a screenshot of ${what} was taken`, await capture(name));
+    const dark = await captureDark(name);
+    check(`in dark mode ${what} turns dark`, dark.followed && dark.shot, dark.background);
+  };
+  const tab = async (name: string, ready: string) => {
+    await click(`[data-tab="${name}"]`);
+    return waitFor(() => has(ready), 10_000);
+  };
+
+  // Automations: the numbers loaded, the list loaded (empty: one sentence, one action).
+  await waitFor(async () => (await count("[data-summary-tile]")) === 3 && !(await has("[data-summary-tile] [data-slot=skeleton]")) && (await has("[data-new-automation]")), 15_000);
+  await delay(800);
+  const ws = await text();
+  texts.push(ws);
+  writeFileSync(join(outDir, "workspace.txt"), ws);
+  check("an empty balance shows the paused notice", ws.includes("Replies are paused") && (await has("[data-chatmany-no-balance]")));
+  check("the workspace shows the last 30 days in three numbers", (await count("[data-summary-tile]")) === 3);
+  check("the workspace has the tabs Automations, People and Account", (await has('[data-tab="automations"]')) && (await has('[data-tab="people"]')) && (await has('[data-tab="account"]')));
+  await shoot("workspace", "the workspace");
+
+  // New automation.
+  await click("[data-new-automation]");
+  check("New automation opens the builder with the post grid", await waitFor(async () => (await has("[data-builder]")) && (await has('[data-post-picker] [role="radio"]')), 10_000));
+  await click('[data-post-picker] [role="radio"]');
+  check("picking a post marks it", await waitFor(() => has('[data-post-picker] [role="radio"][aria-checked="true"]'), 3_000));
+  check("the builder shows what the commenter gets", await has("[data-preview]"));
+  const saveInView = await js<number[] | null>(`(() => { const r = document.querySelector("[data-save]")?.getBoundingClientRect(); return r ? [Math.round(r.top), Math.round(r.bottom), innerHeight] : null; })()`);
+  check("Save is in view without scrolling", Boolean(saveInView && saveInView[0]! >= 0 && saveInView[1]! <= saveInView[2]!), saveInView);
+  texts.push(await text());
+  await delay(300);
+  await shoot("builder", "the builder");
+  await click("[data-builder-cancel]");
+  check("Cancel after a change asks in the page first", await waitFor(() => has("[data-close-confirm]"), 5_000));
+  check("a screenshot of that question was taken", await capture("builder-close"));
+  await click("[data-close-discard]");
+  check("Close without saving goes back to the list", await waitFor(async () => !(await has("[data-builder]")) && (await has("[data-new-automation]")), 5_000));
+
+  // People.
+  check("the People tab opens, with the CSV download", await tab("people", "[data-export]"));
+  await waitFor(async () => !(await has("[data-contacts] [data-slot=skeleton]")), 5_000);
+  await delay(400);
+  texts.push(await text());
+  await shoot("people", "People");
+
+  // Account.
+  check("the Account tab opens", await tab("account", "[data-chatmany-usage]"));
+  await delay(400);
+  const account = await text();
+  texts.push(account);
+  writeFileSync(join(outDir, "account.txt"), account);
+  check("Account shows What chatmany uses, in percent, with the bar", account.includes("What chatmany uses") && /\d+%/.test(account) && (await has("[data-usage-bar]")));
+  await shoot("account", "Account");
+  await click("[data-disconnect-button]");
+  check("Disconnect asks in the page first", await waitFor(() => has("[data-disconnect-confirm]"), 5_000));
+  check("a screenshot of the Disconnect question was taken", await capture("disconnect"));
+  await click("[data-disconnect-keep]");
+  check("Keep it connected closes the question", await waitFor(async () => !(await has("[data-disconnect-confirm]")), 5_000));
+
+  const all = texts.join("\n");
+  check("the workspace shows no money amount", !/[$€£]\s?\d/.test(all), all.match(/[$€£]\s?\d[\d.,]*/)?.[0]);
+  check("the workspace text holds no key", noKey(all));
+
+  // The 390 px minimum width: every tab fits, nothing scrolls sideways.
+  const [width, height] = win.getSize();
+  win.setSize(390, 820);
+  await delay(700);
+  for (const [name, ready] of [
+    ["automations", "[data-new-automation]"],
+    ["people", "[data-export]"],
+    ["account", "[data-chatmany-usage]"],
+  ] as const) {
+    await tab(name, ready);
+    await delay(400);
+    const size = await js<number[]>("[document.documentElement.scrollWidth, window.innerWidth]");
+    check(`at 390 px wide, ${name} does not scroll sideways`, size[0]! <= size[1]! + 1, size);
+    check(`a 390 px screenshot of ${name} was taken`, await capture(`narrow-${name}`));
+  }
+  win.setSize(width ?? 1100, height ?? 820);
+}
+

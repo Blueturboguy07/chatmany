@@ -1,9 +1,19 @@
+import { Download, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { contactStateWords } from "../../shared/messages";
 import type { CampaignRow, ContactView } from "../../shared/types";
-import { BusyLabel, Status, bridge } from "../ui";
+import { BusyLabel, bridge } from "../ui";
+import { EmptyState } from "./EmptyState";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Skeleton } from "./ui/skeleton";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 const DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
+const ALL = "all";
 
 /**
  * Everyone who commented a keyword, per automation or all of them, with a
@@ -15,7 +25,6 @@ export function ContactsSection({ campaigns }: { campaigns: readonly CampaignRow
   const [rows, setRows] = useState<ContactView[] | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveNote, setSaveNote] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setRows(null);
@@ -32,93 +41,113 @@ export function ContactsSection({ campaigns }: { campaigns: readonly CampaignRow
 
   async function download() {
     setSaving(true);
-    setSaveNote(null);
     const res = await bridge().workspace.exportCsv(filter || null);
     setSaving(false);
-    if (!res.ok) setSaveNote({ tone: "error", text: res.message });
-    else if (res.saved) setSaveNote({ tone: "ok", text: "Saved the CSV file." });
+    if (!res.ok) toast.error(res.message);
+    else if (res.saved) toast.success("Saved the CSV file.");
   }
 
   const names = new Map(campaigns.map((c) => [c.campaign_id, c.name || c.campaign_id]));
+  const hasRows = rows !== null && rows.length > 0;
 
   return (
-    <section className="mt-12" aria-labelledby="contacts-title" data-contacts>
-      <div className="spread">
-        <div>
-          <h2 id="contacts-title" className="h2">
+    <section className="grid gap-3" aria-labelledby="contacts-title" data-contacts>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-0.5">
+          <h2 id="contacts-title" className="text-base font-semibold">
             People
           </h2>
-          <p className="mt-2 small muted">Everyone who commented a keyword, and how far they got.</p>
+          <p className="text-muted-foreground">Everyone who commented a keyword, and how far they got.</p>
         </div>
-        <div className="row">
-          <label className="row tiny muted">
-            <span className="sr-only">Show people from</span>
-            <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Show people from" className="select select-inline">
-              <option value="">All automations</option>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={filter || ALL} onValueChange={(value) => setFilter(value === ALL ? "" : value)}>
+            <SelectTrigger size="sm" aria-label="Show people from" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All automations</SelectItem>
               {campaigns.map((c) => (
-                <option key={c.campaign_id} value={c.campaign_id}>
+                <SelectItem key={c.campaign_id} value={c.campaign_id}>
                   {c.name || c.campaign_id}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-          </label>
-          <button type="button" onClick={() => void load()} className="btn btn-quiet btn-small">
-            Refresh
-          </button>
-          <button type="button" onClick={() => void download()} disabled={saving} aria-busy={saving} className="btn btn-quiet btn-small" data-export>
-            <BusyLabel busy={saving}>Download CSV</BusyLabel>
-          </button>
+            </SelectContent>
+          </Select>
+          {hasRows ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="size-8" onClick={() => void load()} aria-label="Refresh">
+                  <RotateCw aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={() => void download()} disabled={saving} aria-busy={saving} data-export>
+            <BusyLabel busy={saving} icon={<Download aria-hidden />}>
+              Download CSV
+            </BusyLabel>
+          </Button>
         </div>
       </div>
-      <Status assertive={saveNote?.tone === "error"} className={`mt-2 small ${saveNote?.tone === "error" ? "danger-text" : "ok-text"}`}>
-        {saveNote?.text ?? ""}
-      </Status>
 
       {error ? (
-        <div className="plain mt-6">
-          <p className="small danger-text">{error}</p>
-          <button type="button" onClick={() => void load()} className="btn btn-quiet mt-3">
+        <EmptyState text={`The people list didn’t load. ${error}`}>
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RotateCw aria-hidden />
             Try again
-          </button>
-        </div>
+          </Button>
+        </EmptyState>
       ) : rows === null ? (
-        <p className="mt-6 small muted">Loading people…</p>
+        <Card className="gap-0 py-0" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-4 border-b px-3 py-3 last:border-0">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 flex-1" />
+            </div>
+          ))}
+        </Card>
       ) : rows.length === 0 ? (
-        <div className="plain mt-6">
-          <p>No one yet.</p>
-          <p className="mt-1 small muted">When someone comments a keyword, they show up here.</p>
-        </div>
+        <EmptyState text="No one yet. When someone comments a keyword, they show up here.">
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RotateCw aria-hidden />
+            Refresh
+          </Button>
+        </EmptyState>
       ) : (
         // The one element allowed to be wider than the window: it scrolls in its own box.
-        <div className="table-box" tabIndex={0} role="region" aria-label="People">
-          <table>
-            <caption className="sr-only">People who commented a keyword</caption>
-            <thead>
-              <tr>
-                <th scope="col">Person</th>
-                <th scope="col">Automation</th>
-                <th scope="col">Where they are</th>
-                <th scope="col">Followed</th>
-                <th scope="col">Email</th>
-                <th scope="col">Last change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.campaign_id}:${r.igsid}`}>
-                  <td className="bold" translate="no">
-                    {r.username ? `@${r.username}` : <span className="muted">Name not shared</span>}
-                  </td>
-                  <td className="muted">{names.get(r.campaign_id) ?? r.campaign_id}</td>
-                  <td>{contactStateWords(r)}</td>
-                  <td className="muted">{r.followed ? "Yes" : "—"}</td>
-                  <td className="muted break">{r.email ?? "—"}</td>
-                  <td className="muted nowrap">{DAY.format(new Date(r.updated_at * 1000))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card className="gap-0 overflow-hidden py-0">
+          <div tabIndex={0} role="region" aria-label="People" className="outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <Table>
+              <TableCaption className="sr-only">People who commented a keyword</TableCaption>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Person</TableHead>
+                  <TableHead>Automation</TableHead>
+                  <TableHead>Where they are</TableHead>
+                  <TableHead>Followed</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Last change</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((r) => (
+                  <TableRow key={`${r.campaign_id}:${r.igsid}`}>
+                    <TableCell className="font-medium" translate="no">
+                      {r.username ? `@${r.username}` : <span className="font-normal text-muted-foreground">Name not shared</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{names.get(r.campaign_id) ?? r.campaign_id}</TableCell>
+                    <TableCell>{contactStateWords(r)}</TableCell>
+                    <TableCell className="text-muted-foreground">{r.followed ? "Yes" : "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{r.email ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">{DAY.format(new Date(r.updated_at * 1000))}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
       )}
     </section>
   );

@@ -43,8 +43,30 @@ const FAKE_TOKEN = `pat_chatmany_${randomBytes(16).toString("hex")}`;
 const FAKE_KEY = `pk_test_${randomBytes(16).toString("hex")}`;
 const CLAIM_CODE = "ABCD-EFGH";
 const RUN_TIMEOUT_MS = 180_000;
-/** The version the app must report: this folder's package.json (0.1.0 for desktop-v0.1.0-rc1). */
-const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+/**
+ * The version the app must report: this folder's package.json, or
+ * CHATMANY_SMOKE_EXPECT_VERSION when the app is a release built from another
+ * commit (desktop-release-smoke.yml sets it from the file name).
+ */
+const VERSION = process.env.CHATMANY_SMOKE_EXPECT_VERSION || JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
+/** A plain coloured square as a data: picture, so the post grid has previews without any network. */
+const swatch = (fill) => `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="4" height="4" fill="${fill}"/></svg>`).toString("base64")}`;
+/** The creator's recent posts, as GET /api/v1/chatmany/api/media answers them. */
+const MEDIA = [
+  ["IMAGE", "New guide out now. Comment GUIDE for the link.", "#c7d2fe"],
+  ["VIDEO", "Behind the scenes of the shoot", "#fde68a"],
+  ["CAROUSEL_ALBUM", "Three tips for better light", "#bbf7d0"],
+  ["IMAGE", "My desk setup", "#fecaca"],
+  ["VIDEO", "Q and A, part two", "#e9d5ff"],
+  ["IMAGE", "Studio day", "#bae6fd"],
+].map(([media_type, caption, fill], i) => ({
+  id: `1790000000000000${i + 1}`,
+  caption,
+  media_type,
+  ...(media_type === "VIDEO" ? { thumbnail_url: swatch(fill) } : { media_url: swatch(fill) }),
+  permalink: `https://www.instagram.com/p/smoke${i + 1}/`,
+}));
 
 const results = [];
 const check = (run, name, ok, detail) => {
@@ -150,7 +172,7 @@ function fakePublik() {
         }
         if (state.connected && req.method === "GET") {
           const path = url.pathname.slice("/api/v1/chatmany/api/".length);
-          if (path === "media") return json(200, { media: [] });
+          if (path === "media") return json(200, { media: MEDIA });
           if (path === "campaigns") return json(200, { campaigns: [] });
           if (path === "contacts") return json(200, { contacts: [] });
           if (path === "dashboard") return json(200, { campaign_id: null, days: 30, cards: { comments: 3, sends: 2, clicks: 0, ctr: 0, follows: 0, emails: 0, delivered: 2 }, funnel: [] });
@@ -175,6 +197,7 @@ function launch(run, env) {
   delete childEnv.DO_NOT_TRACK;
   delete childEnv.PUBLIK_TELEMETRY;
   delete childEnv.ELECTRON_RUN_AS_NODE;
+  delete childEnv.CHATMANY_SMOKE_EXPECT_VERSION;
   if (!env.CHATMANY_SMOKE_APP_TOKEN) delete childEnv.CHATMANY_SMOKE_APP_TOKEN;
   return new Promise((done) => {
     const child = spawn(exe, [`--smoke-test=${dir}`], { env: childEnv, stdio: ["ignore", "inherit", "inherit"] });
@@ -236,6 +259,8 @@ function noKeyInFiles(run, dir) {
   check(run, "Connect, then I cancelled, start again: two connect links, both with the key", links.length === 2 && links.every((e) => e.bearer), links.length);
   const polled = new Set(log.filter((e) => e.connectId).map((e) => e.connectId));
   check(run, "the app polled the second connect after starting again", polled.has(state.connects[1]), [...polled]);
+  const writes = log.filter((e) => e.method === "POST" && (e.path === "/api/v1/chatmany/disconnect" || e.path.startsWith("/api/v1/chatmany/api/")));
+  check(run, "looking around changed nothing: no disconnect, no automation saved or deleted", writes.length === 0, writes.map((e) => e.path));
   writeFileSync(join(done.dir, "requests.json"), `${JSON.stringify(log.map(({ at, method, path, bearer, event }) => ({ at, method, path, bearer, event: event?.event })), null, 2)}\n`);
 }
 

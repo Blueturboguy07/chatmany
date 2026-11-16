@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Loader2 } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import type { ChatmanyBridge } from "../shared/bridge";
+import { cn } from "./lib/utils";
 
 /** The preload's bridge. Read when called, so a test can render without a window. */
 export function bridge(): ChatmanyBridge {
@@ -24,65 +26,28 @@ export function Status({ children, className, assertive = false, id }: { childre
   );
 }
 
-/** A button's label while its request runs: the same words, with a spinner beside them. */
-export function BusyLabel({ busy, children }: { busy: boolean; children: ReactNode }) {
+/** A button's label while its request runs: a spinner in place of the icon, the same words. */
+export function BusyLabel({ busy, icon, children }: { busy: boolean; icon?: ReactNode; children: ReactNode }) {
   return (
     <>
-      {busy ? <span aria-hidden className="spinner" /> : null}
+      {busy ? <Loader2 aria-hidden className="animate-spin" /> : (icon ?? null)}
       <span>{children}</span>
     </>
   );
 }
 
-/**
- * The in-page two-step confirm ("Delete", then "Confirm delete" and "Keep
- * it"). Focus moves to the confirm button when the step arms and back to
- * the first button when it is cancelled; Escape cancels. No browser
- * dialogs anywhere in the app.
- */
-export function useConfirmStep() {
-  const [armed, setArmed] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const returnFocus = useRef(false);
-
-  useEffect(() => {
-    if (armed) {
-      confirmRef.current?.focus();
-    } else if (returnFocus.current) {
-      returnFocus.current = false;
-      triggerRef.current?.focus();
-    }
-  }, [armed]);
-
-  const arm = useCallback(() => setArmed(true), []);
-  const cancel = useCallback(() => {
-    returnFocus.current = true;
-    setArmed(false);
-  }, []);
-  const reset = useCallback(() => setArmed(false), []);
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      cancel();
-    },
-    [cancel],
-  );
-
-  return { armed, arm, cancel, reset, onKeyDown, triggerRef, confirmRef };
-}
-
 /** A link to a publik or Instagram page: it opens in the system browser. */
-export function ExternalLink({ href, className = "link", children }: { href: string; className?: string; children: ReactNode }) {
+export function ExternalLink({ href, className, children, onClick, ...props }: Omit<ComponentProps<"a">, "href"> & { href: string }) {
   return (
     <a
       href={href}
-      className={className}
+      className={cn("font-medium text-primary underline-offset-4 hover:underline", className)}
       onClick={(event) => {
+        onClick?.(event);
         event.preventDefault();
         void bridge().openExternal(href);
       }}
+      {...props}
     >
       {children}
     </a>

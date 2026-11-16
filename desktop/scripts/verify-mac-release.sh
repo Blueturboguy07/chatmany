@@ -6,8 +6,8 @@
 #
 # It puts a quarantine mark on the dmg (as a browser does), then checks the dmg
 # with Gatekeeper (spctl), its stapled notarization ticket (stapler) and
-# codesign; mounts it, copies chatmany.app out to <app folder> (the copy stays
-# quarantined, so the smoke test's launch goes through Gatekeeper), and checks
+# codesign; mounts it, copies chatmany.app out to <app folder> (the copy keeps
+# the quarantine mark, as a download does), and checks
 # the app the same way, plus its bundle id, version, architecture,
 # entitlements and app token (never shown).
 #
@@ -127,7 +127,7 @@ else
   source_of_mark="set by this script: the mount did not pass the mark on"
 fi
 xattr -p com.apple.quarantine "$EXE" >/dev/null 2>&1
-record $? "the copied app is quarantined, so its first launch goes through Gatekeeper" "$source_of_mark"
+record $? "the copied app keeps the quarantine mark of a download" "$source_of_mark"
 
 # ---------- the app ----------
 id="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist" 2>&1)"

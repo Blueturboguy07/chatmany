@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import type { GateView } from "../shared/bridge";
+import { Toaster } from "./components/ui/sonner";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { Gate } from "./Gate";
 import { Home } from "./Home";
+import { cn } from "./lib/utils";
 import { bridge } from "./ui";
 
 /**
@@ -11,6 +14,8 @@ import { bridge } from "./ui";
  */
 export function App() {
   const [gate, setGate] = useState<GateView>({ screen: "starting" });
+  // On macOS the window has no title bar (hiddenInset): this header is it, with room for the window buttons.
+  const mac = bridge().info.platform === "darwin";
 
   useEffect(() => {
     const off = bridge().gate.onChange(setGate);
@@ -22,16 +27,24 @@ export function App() {
   }, []);
 
   return (
-    <>
-      <header className="topbar">
-        <span className="brand">chatmany</span>
-        {gate.screen === "signed_in" ? (
-          <span className="who" translate="no">
-            {gate.handle ? `@${gate.handle} on publik` : "Signed in to publik"}
+    <TooltipProvider>
+      <div className="flex min-h-screen flex-col">
+        <header className={cn("sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between gap-4 border-b bg-background px-4 select-none", mac && "app-drag pl-20")}>
+          <span className="flex items-center gap-2 font-semibold">
+            <span aria-hidden className="grid size-6 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+              c
+            </span>
+            chatmany
           </span>
-        ) : null}
-      </header>
-      {gate.screen === "signed_in" ? <Home /> : <Gate view={gate} />}
-    </>
+          {gate.screen === "signed_in" ? (
+            <span className="truncate text-xs text-muted-foreground" translate="no">
+              {gate.handle ? `@${gate.handle} on publik` : "Signed in to publik"}
+            </span>
+          ) : null}
+        </header>
+        {gate.screen === "signed_in" ? <Home /> : <Gate view={gate} />}
+      </div>
+      <Toaster position="bottom-right" />
+    </TooltipProvider>
   );
 }

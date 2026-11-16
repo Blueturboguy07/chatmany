@@ -79,7 +79,10 @@ jobs:
           ls -la "$DL"
           count=$(find "$DL" -name '*.dmg' | wc -l | tr -d ' ')
           [ "$count" = 1 ] || { echo "Expected one $ARCH dmg in release $TAG, found $count."; exit 1; }
-          echo "DMG=$(find "$DL" -name '*.dmg')" >>"$GITHUB_ENV"
+          DMG="$(find "$DL" -name '*.dmg')"
+          echo "DMG=$DMG" >>"$GITHUB_ENV"
+          # The release may come from an older commit than these scripts: the smoke test expects the file's version.
+          echo "CHATMANY_SMOKE_EXPECT_VERSION=$(basename "$DMG" | sed -E 's/^chatmany-(.+)-mac-(arm64|x64)\.dmg$/\1/')" >>"$GITHUB_ENV"
           echo "Release \`$TAG\` (mac-$ARCH): runner $(sw_vers -productName) $(sw_vers -productVersion), $(uname -m)." >>"$GITHUB_STEP_SUMMARY"
 
       - name: Rosetta (x64 only)
@@ -171,6 +174,9 @@ jobs:
           $files = @(Get-ChildItem -Path $dl -Filter *.exe)
           if ($files.Count -ne 1) { throw "Expected one setup exe in release $env:TAG, found $($files.Count)." }
           "SETUP=$($files[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # The release may come from an older commit than these scripts: the smoke test expects the file's version.
+          $version = $files[0].Name -replace '^chatmany-(.+)-windows-x64-setup\.exe$', '$1'
+          "CHATMANY_SMOKE_EXPECT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "Release ``$env:TAG`` (windows-x64): runner $([System.Environment]::OSVersion.VersionString)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: Install silently and check the installed app

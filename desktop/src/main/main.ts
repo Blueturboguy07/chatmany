@@ -26,11 +26,16 @@ const APP_HOST = "chatmany";
 const APP_URL = `${SCHEME}://${APP_HOST}/index.html`;
 const RENDERER_DIR = join(__dirname, "..", "dist", "renderer");
 
-/** Instagram serves profile pictures and post previews from these. */
+/**
+ * The page's rules. Scripts come only from the app itself. Styles may also be
+ * inline: the dialogs (Radix) and the toasts (Sonner) add their own <style>
+ * elements. Instagram serves profile pictures and post previews from the two
+ * image hosts.
+ */
 const CSP = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.cdninstagram.com https://*.fbcdn.net",
   "font-src 'self'",
   "connect-src 'none'",
@@ -263,8 +268,10 @@ function createWindow(): BrowserWindow {
     // The layout works down to a phone-wide 390 px.
     minWidth: 390,
     minHeight: 560,
+    // macOS: no title bar; the page's own header is the drag area, the window buttons sit in it.
+    ...(platform() === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 17 } } : {}),
     show: false,
-    backgroundColor: dark ? "#121316" : "#ffffff",
+    backgroundColor: dark ? "#0a0a0a" : "#ffffff",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,

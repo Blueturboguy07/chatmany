@@ -5,6 +5,9 @@ import { Workspace } from "../src/renderer/components/Workspace";
 import type { ConnectedStatus } from "../src/shared/types";
 import { Gate, SIGN_IN_BODY } from "../src/renderer/Gate";
 import { OFFLINE_TEXT, UNREACHABLE_TEXT } from "../src/shared/messages";
+import { APP_VERSION } from "../src/main/publik";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 describe("the gate's screens", () => {
   it("Sign in with publik: one screen, one button, the waiting note", () => {
@@ -47,7 +50,7 @@ const CONNECTED: ConnectedStatus = {
 describe("the workspace's billing parts", () => {
   const usage = { hosting_share: 0.12, used_share: 0.4, resets_at: "2026-12-01T00:00:00Z", prepaid_left_share: null, headline: "chatmany used 12% of your plan’s monthly limit.", detail: "All your apps used 40%. The limit resets on Dec 1.", cost: "Hosting is charged at what it costs publik, plus 10%. While it costs publik nothing, it costs you nothing." };
   const render = (billing: Parameters<typeof Workspace>[0]["billing"]) =>
-    renderToStaticMarkup(<Workspace status={CONNECTED} billing={billing} onReconnect={() => undefined} reconnecting={false} onDisconnected={() => undefined} />);
+    renderToStaticMarkup(<Workspace status={CONNECTED} billing={billing} onReconnect={() => undefined} reconnecting={false} onDisconnected={() => undefined} initialTab="account" />);
 
   it("an empty balance: the paused notice, the usage box and the bar, in percent only", () => {
     const html = render({ can_pay: false, notice: { title: "Replies are paused. Your publik balance is empty.", body: "chatmany sends no DMs and no public replies while your balance is empty." }, usage });
@@ -57,10 +60,20 @@ describe("the workspace's billing parts", () => {
     expect(html).toContain("chatmany used 12% of your plan’s monthly limit.");
     expect(html).toContain("All your apps used 40%. The limit resets on Dec 1.");
     expect(html).toContain("data-usage-bar");
-    expect(html).toContain('width="12"');
+    expect(html).toContain('aria-valuenow="12"');
     expect(html).toContain("Open your wallet");
     expect(html).not.toMatch(/\$\s?\d/);
-    expect(html).not.toContain("style=");
+  });
+
+  it("the paused notice shows on every tab, the usage box only on Account", () => {
+    const notice = { title: "Replies are paused. Your publik balance is empty.", body: "chatmany sends no DMs and no public replies while your balance is empty." };
+    const html = renderToStaticMarkup(
+      <Workspace status={CONNECTED} billing={{ can_pay: false, notice, usage }} onReconnect={() => undefined} reconnecting={false} onDisconnected={() => undefined} />,
+    );
+    expect(html).toContain("data-chatmany-no-balance");
+    expect(html).not.toContain("data-chatmany-usage");
+    expect(html).toContain('data-tab="people"');
+    expect(html).toContain('data-tab="account"');
   });
 
   it("a balance that can pay: no notice, the box stays", () => {
@@ -84,5 +97,14 @@ describe("waiting for Instagram", () => {
     expect(html).toContain("I cancelled, start again");
     expect(html).toContain("Open Instagram again");
     expect(html).toContain("Stop waiting");
+  });
+});
+
+describe("the version", () => {
+  it("is the same in package.json, the publik module and the preload", () => {
+    const root = join(__dirname, "..");
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string };
+    expect(APP_VERSION).toBe(pkg.version);
+    expect(readFileSync(join(root, "src/preload/preload.ts"), "utf8")).toContain(`version: "${pkg.version}"`);
   });
 });
