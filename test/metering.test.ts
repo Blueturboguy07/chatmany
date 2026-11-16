@@ -309,16 +309,16 @@ describe("the one-time upgrade from the old event count", () => {
     expect(res.queued).toBe(0);
     const sent = m.calls.flatMap((c) => c.batch.units);
     expect(sent.filter((u) => u.slug === UNIT_EVENT)).toEqual([]);
-    expect(sent.filter((u) => u.slug === UNIT_POLL).reduce((n, u) => n + u.units, 0)).toBe(12);
+    expect(sent.filter((u) => u.slug === UNIT_POLL).reduce((n, u) => n + u.units, 0)).toBe(0); // polls are not reported
     expect(sent.filter((u) => u.slug === UNIT_SEND).reduce((n, u) => n + u.units, 0)).toBe(5);
     // The old backlog goes as one batch (none of it was ever settled), then the pending counts.
-    expect(m.calls).toHaveLength(2);
+    expect(m.calls).toHaveLength(1);
     expect(m.calls[0]!.batch.idempotency_key).toBe(`t_one.meter-v${METER_VERSION}.backlog`);
-    expect(m.calls[0]!.batch.units).toEqual([{ slug: UNIT_POLL, units: 10 }, { slug: UNIT_SEND, units: 5 }]);
+    expect(m.calls[0]!.batch.units).toEqual([{ slug: UNIT_SEND, units: 5 }]);
 
     const rows = Object.fromEntries((await m.db.usageForMonth()).map((r) => [r.slug, r]));
     expect(rows[UNIT_EVENT]).toMatchObject({ units: 0, reported: 0 });
-    expect(rows[UNIT_POLL]).toMatchObject({ units: 12, reported: 12 });
+    expect(rows[UNIT_POLL]).toMatchObject({ units: 12, reported: 0 }); // counted here, never reported
     expect(rows[UNIT_SEND]).toMatchObject({ units: 5, reported: 5 });
     expect(await m.storage.get("usage:version")).toBe(METER_VERSION);
   });
@@ -361,10 +361,10 @@ describe("the one-time upgrade from the old event count", () => {
 describe("the operator's meter diagnostic", () => {
   it("keeps the last attempt's outcome and error text, and the upgrade result", async () => {
     const m = makeMeter({ throwOnce: true });
-    await m.storage.put("usage:queue", [{ idempotency_key: "t_one.1.aaaaaa", units: [{ slug: UNIT_EVENT, count: 9, at: 1 }, { slug: UNIT_POLL, count: 1, at: 1 }] }]);
+    await m.storage.put("usage:queue", [{ idempotency_key: "t_one.1.aaaaaa", units: [{ slug: UNIT_EVENT, count: 9, at: 1 }, { slug: UNIT_SEND, count: 1, at: 1 }] }]);
     await m.meter.flush(true);
     let state = await readMeterState(m.storage);
-    expect(state).toMatchObject({ version: METER_VERSION, queue_length: 1, queue_totals: { [UNIT_POLL]: 1 } });
+    expect(state).toMatchObject({ version: METER_VERSION, queue_length: 1, queue_totals: { [UNIT_SEND]: 1 } });
     expect(state.diag).toMatchObject({ last_outcome: "retry", last_status: null, upgrade_dropped: 9, upgrade_error: null });
     expect(String((state.diag as { last_error: string }).last_error)).toContain("network down");
 

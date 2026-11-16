@@ -91,6 +91,8 @@ export class Engine {
 
     for (const campaign of campaigns) {
       if (!commentTriggers(evt.text, campaign.keywords, campaign.exclude)) continue;
+      // A copied campaign does not answer comments from before it started (Campaign.since).
+      if (campaign.since && evt.timestamp > 0 && evt.timestamp < campaign.since) continue;
       matchedCampaignId = campaign.campaign_id;
 
       // Dedup DM: multiple comments from one person = exactly one opening DM per campaign.

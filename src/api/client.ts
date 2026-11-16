@@ -89,6 +89,9 @@ export class InstagramClient {
     private readonly igUserId: string = "me",
   ) {}
 
+  /** Instagram's rate-limit header from the last answer, when it sent one. */
+  lastUsage: string | null = null;
+
   private base(path: string): string {
     return `${GRAPH_HOST}/${this.version}${path.startsWith("/") ? path : `/${path}`}`;
   }
@@ -115,6 +118,8 @@ export class InstagramClient {
   }
 
   private async parse<T>(res: Response): Promise<T> {
+    const usage = res.headers?.get?.("x-business-use-case-usage") ?? res.headers?.get?.("x-app-usage") ?? null;
+    if (usage) this.lastUsage = usage;
     const text = await res.text();
     let json: unknown = undefined;
     try {

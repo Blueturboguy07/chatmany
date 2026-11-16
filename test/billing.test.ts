@@ -212,7 +212,8 @@ describe("what is metered", () => {
     expect(h.publik.usage).toHaveLength(1);
     expect(h.publik.usage[0]!.tenant).toBe(USER);
     const units = Object.fromEntries(h.publik.usage[0]!.units.map((u) => [u.slug, u.units]));
-    expect(units[UNIT_POLL]).toBe(1);
+    // A poll is counted in D1 and never reported to publik (LOCAL_ONLY_UNITS).
+    expect(units[UNIT_POLL]).toBeUndefined();
     expect(units[UNIT_EVENT]).toBe(2);
   });
 

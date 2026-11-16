@@ -142,6 +142,11 @@ export interface Campaign {
   check_follow?: boolean;
   verify_follow_count?: boolean;
   ask_email?: boolean;
+  /**
+   * Unix seconds. A comment older than this is not answered by this campaign. Used when a campaign
+   * is copied from another system that already answered the older comments.
+   */
+  since?: number;
   reward: RewardConfig;
   copy: CampaignCopy;
 }

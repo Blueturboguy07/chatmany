@@ -12,7 +12,7 @@
 //   200 {"tenant": "...", "can_pay": true|false}
 //
 // The answer is cached in the tenant's own Durable Object storage: re-asked after a minute while
-// the wallet is empty (so a top-up resumes replies within about a minute), and after ten minutes
+// the wallet is empty (so a top-up resumes replies within about a minute), and after thirty minutes
 // while it can pay (the flush answers every minute keep it fresh in between).
 //
 // FAIL OPEN ON SILENCE, NEVER ON A "NO". Only publik's own answer pauses or resumes. No answer
@@ -28,7 +28,7 @@ export type BalanceState = "ok" | "empty";
 /** Re-ask this soon while the wallet is empty, so a top-up resumes replies quickly. */
 export const EMPTY_RECHECK_SECONDS = 60;
 /** Re-ask this soon while the wallet can pay. Flush answers (every minute of use) refresh it too. */
-export const OK_RECHECK_SECONDS = 10 * 60;
+export const OK_RECHECK_SECONDS = 30 * 60;
 
 const K_STATE = "balance:state";
 const K_CHECKED_AT = "balance:checked_at";

@@ -20,6 +20,7 @@ import {
   listTenantsByInstagramUser,
   listTenantsByPublikUser,
   listTenantsForTick,
+  countTenantsForTick,
   patchTenant,
   publicView,
   saveTenantAppSecret,
@@ -29,6 +30,7 @@ import {
 import type { TenantRow } from "../tenant/registry";
 import { isTenantApiWrite, tenantApi, tenantAuthorizeUrl, tenantOAuth } from "./hostedApi";
 import { json } from "./http";
+import { storageReport } from "../tenant/retention";
 
 /**
  * Route a request if it belongs to the hosted surface; return null to let the self-host router
@@ -195,6 +197,10 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
   const parts = url.pathname.split("/").filter(Boolean); // ["hosted", "tenants", id?, action?]
   const method = req.method.toUpperCase();
 
+  // Operator view of the shared database: its size against D1's limit, rows per table, and the
+  // tenants that hold the most rows. Counts only; no creator data.
+  if (parts[1] === "storage" && parts.length === 2 && method === "GET") return json(await storageReport(env.DB));
+
   if (parts[1] === "tenants" && parts.length === 2) {
     if (method === "POST") {
       const body = (await req.json()) as {
@@ -286,7 +292,7 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
       const subpath = "/" + parts.slice(4).join("/");
       const res = await tenantApi(env, tenant, subpath, req, url);
       // A saved or resumed automation must not wait for the next cron minute to be noticed.
-      if (res.ok && isTenantApiWrite(subpath, method)) ctx.waitUntil(callTenant(env, tenantId, "/arm", {}).catch(() => undefined));
+      if (res.ok && isTenantApiWrite(subpath, method)) ctx.waitUntil(callTenant(env, tenantId, "/kick", {}).catch(() => undefined));
       return res;
     }
 
@@ -387,15 +393,28 @@ async function proxy(env: HostedEnv, tenantId: string, path: string): Promise<Re
 export async function fanOutTick(env: Env): Promise<void> {
   const hosted = asHosted(env);
   if (!hosted) return;
-  const tenants = await listTenantsForTick(hosted.DB, "polling");
-  for (const t of tenants) {
-    try {
-      await callTenant(hosted, t.tenant_id, "/arm", {});
-    } catch (e) {
-      console.warn(`[chatmany] arm failed for ${t.tenant_id}: ${e instanceof Error ? e.message : String(e)}`);
-    }
+  // Each object re-arms its own alarm; this pass only restarts one that stopped. It used to take
+  // the first 200 tenants, one after the other, every minute: tenant 201 was never restarted, and
+  // 200 calls in a row do not fit one invocation for long. Now each minute takes one page, in
+  // turn, 20 calls at a time, and stays under the 1,000 subrequests an invocation may make.
+  const total = await countTenantsForTick(hosted.DB, "polling");
+  const pages = Math.max(1, Math.ceil(total / FAN_OUT_PAGE));
+  const page = Math.floor(Date.now() / 60_000) % pages;
+  const tenants = await listTenantsForTick(hosted.DB, "polling", FAN_OUT_PAGE, page * FAN_OUT_PAGE);
+  for (let i = 0; i < tenants.length; i += FAN_OUT_PARALLEL) {
+    const chunk = tenants.slice(i, i + FAN_OUT_PARALLEL);
+    const done = await Promise.allSettled(chunk.map((t) => callTenant(hosted, t.tenant_id, "/arm", {})));
+    done.forEach((d, j) => {
+      if (d.status === "rejected") {
+        console.warn(`[chatmany] arm failed for ${chunk[j]!.tenant_id}: ${d.reason instanceof Error ? d.reason.message : String(d.reason)}`);
+      }
+    });
   }
 }
+
+/** Tenants restarted per cron minute, and how many calls run at once. */
+export const FAN_OUT_PAGE = 800;
+export const FAN_OUT_PARALLEL = 20;
 
 /** Path T (one publik app, all creators): route an entry to its tenant by IG user id. */
 export async function tenantForEntry(env: HostedEnv, entryId: string): Promise<TenantRow | null> {

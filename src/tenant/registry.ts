@@ -126,15 +126,24 @@ export async function listTenantsForTick(
   db: D1Database,
   mode: TenantMode,
   limit = 200,
+  offset = 0,
 ): Promise<Array<{ tenant_id: string }>> {
   const rows = await db
     .prepare(
       `SELECT tenant_id FROM tenants
-       WHERE mode = ? AND status IN ('active','paused_credit') ORDER BY tenant_id LIMIT ?`,
+       WHERE mode = ? AND status IN ('active','paused_credit') ORDER BY tenant_id LIMIT ? OFFSET ?`,
     )
-    .bind(mode, limit)
+    .bind(mode, limit, offset)
     .all<{ tenant_id: string }>();
   return rows.results ?? [];
+}
+
+export async function countTenantsForTick(db: D1Database, mode: TenantMode): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM tenants WHERE mode = ? AND status IN ('active','paused_credit')")
+    .bind(mode)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
 }
 
 export async function listTenants(db: D1Database, limit = 500): Promise<TenantRow[]> {

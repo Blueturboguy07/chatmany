@@ -87,6 +87,7 @@ export function validateCampaign(input: unknown, index = 0): Campaign {
     check_follow: Boolean(c.check_follow),
     verify_follow_count: Boolean(c.verify_follow_count),
     ask_email: Boolean(c.ask_email),
+    ...(typeof c.since === "number" && c.since > 0 ? { since: Math.floor(c.since) } : {}),
     reward: { type: reward.type as Campaign["reward"]["type"], value: reward.value as string },
     copy: copy as unknown as Campaign["copy"],
   };

@@ -173,6 +173,14 @@ export async function tenantApi(
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
+    // A new automation answers comments from now on. Without this, switching one on sent a DM to
+    // every person who commented the keyword in the last 7 days, which the creator did not ask
+    // for. An edit keeps the start time the automation already has.
+    if (!campaign.since) {
+      const existing = await db.getCampaign(campaign.campaign_id);
+      campaign.since = existing ? existing.since : now();
+      if (!campaign.since) delete campaign.since;
+    }
     await db.upsertCampaign(campaign, payload.active ?? true);
     return json({ ok: true, campaign_id: campaign.campaign_id });
   }

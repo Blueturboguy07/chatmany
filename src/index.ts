@@ -15,7 +15,7 @@ import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
 import { handleApi } from "./routes/api";
 import { isOwner, json } from "./routes/http";
 import { fanOutTick, handleHosted } from "./routes/hosted";
-import { purgeExpired } from "./tenant/retention";
+import { purgeExpired, storageReport } from "./tenant/retention";
 
 export { TenantDO } from "./tenant/do";
 
@@ -90,6 +90,12 @@ export default {
       if (isHosted(env)) {
         const deleted = await purgeExpired(env.DB, Math.floor(Date.now() / 1000));
         console.log(`[chatmany] retention: deleted ${JSON.stringify(deleted)}`);
+        const storage = await storageReport(env.DB).catch(() => null);
+        if (storage) {
+          const line = `[chatmany] storage: ${storage.size_bytes} bytes of ${storage.limit_bytes} (${storage.tenants} tenants)`;
+          if (storage.warn) console.error(`${line}. OVER THE WARN LINE: move tenant data out of the shared database.`);
+          else console.log(line);
+        }
         return;
       }
       const result = await refreshTokenIfDue(env);

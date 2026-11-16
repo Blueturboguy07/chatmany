@@ -332,7 +332,7 @@ describe("/hosted/tenants/{id}/api/* is bound to one tenant", () => {
     const saved = await call(env, ctx, "POST", `/hosted/tenants/${a}/api/campaigns`, { campaign: campaign("a-only"), active: true });
     expect(saved.status).toBe(200);
     await settled();
-    expect(dispatches.map((d) => `${d.tenantId}${d.path}`)).toEqual([`${a}/arm`]);
+    expect(dispatches.map((d) => `${d.tenantId}${d.path}`)).toEqual([`${a}/kick`]);
 
     const listA = (await (await call(env, ctx, "GET", `/hosted/tenants/${a}/api/campaigns`)).json()) as { campaigns: Array<{ campaign_id: string; active: boolean }> };
     const listB = (await (await call(env, ctx, "GET", `/hosted/tenants/${b}/api/campaigns`)).json()) as { campaigns: unknown[] };

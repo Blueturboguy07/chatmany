@@ -18,8 +18,8 @@ import { BalanceGate, readBalanceState } from "./balance";
 import { UsageMeter, readMeterState } from "./metering";
 
 /** Which build this object runs; shown by the /meter diagnostic so a deploy can be confirmed live. */
-export const BUILD = "meter-v2-diag-1";
-import { TenantRunner } from "./runner";
+export const BUILD = "scale-1";
+import { K_GRAPH_USAGE, TenantRunner } from "./runner";
 import {
   getTenant,
   patchTenant,
@@ -43,6 +43,12 @@ export function pollIntervalSeconds(env: { HOSTED_POLL_INTERVAL_SECONDS?: string
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_POLL_INTERVAL_SECONDS;
   return Math.max(MIN_POLL_INTERVAL_SECONDS, Math.floor(n));
 }
+/**
+ * A tenant with no automation switched on, and a tenant whose webhooks are live, are read this
+ * often. For the first it is the check that an automation was switched on by a path that did not
+ * kick the object; for the second it is the backup for a delivery that Meta did not send.
+ */
+export const SLOW_POLL_INTERVAL_SECONDS = 5 * 60;
 /** Backlog sweep cadence: catches anything that scrolled out of the newest-page window. */
 const SWEEP_INTERVAL_SECONDS = 20 * 60;
 /** Token refresh check, once a day (a long-lived token must be > 24h old to refresh). */
@@ -98,6 +104,12 @@ export class TenantDO implements DurableObject {
         await this.arm(tenantId);
         return json({ ok: true });
       }
+      case "/kick": {
+        // An automation was saved or switched on: read now, not at the end of a slow interval.
+        await this.ctx.storage.put(K_NEXT + "poll", now());
+        await this.arm(tenantId);
+        return json({ ok: true });
+      }
       case "/retire": {
         // The tenant is about to be erased (disconnect, or Meta's data deletion). Report the usage
         // still pending so the creator's bill is complete, then forget everything this object
@@ -136,6 +148,8 @@ export class TenantDO implements DurableObject {
             usage: (await this.ctx.storage.get<number>(K_NEXT + "usage")) ?? null,
             alarm: await this.ctx.storage.getAlarm(),
           },
+          graph_usage: (await this.ctx.storage.get(K_GRAPH_USAGE)) ?? null,
+          media_hot: (await this.ctx.storage.get("media_hot")) ?? null,
           meter: await readMeterState(this.ctx.storage),
           balance: await readBalanceState(this.ctx.storage),
         });
@@ -174,8 +188,11 @@ export class TenantDO implements DurableObject {
 
     const parts = await this.parts(tenantId);
     if (parts) {
-      if (tenant.mode === "polling" && (await due("poll", pollIntervalSeconds(this.env)))) {
-        await parts.runner.runPoll();
+      const pollEvery = tenant.mode === "polling" ? pollIntervalSeconds(this.env) : SLOW_POLL_INTERVAL_SECONDS;
+      if (await due("poll", pollEvery)) {
+        const report = await parts.runner.runPoll();
+        // Nothing switched on: wait longer. Saving an automation kicks the object (/kick).
+        if (report.idle) await this.ctx.storage.put(K_NEXT + "poll", t + SLOW_POLL_INTERVAL_SECONDS);
       }
       if (await due("sweep", SWEEP_INTERVAL_SECONDS)) await parts.runner.runSweep();
       if (await due("usage", USAGE_INTERVAL_SECONDS)) await parts.runner.flushUsage(true);

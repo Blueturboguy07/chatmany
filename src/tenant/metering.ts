@@ -27,6 +27,14 @@ export const UNIT_EVENT = "chatmany.event";
 export const UNIT_SEND = "chatmany.send";
 export const UNIT_POLL = "chatmany.poll";
 
+/**
+ * Units that stay in D1 (usage_monthly) and never go to publik. A poll is publik's own cost, not a
+ * thing the creator pays for, and one poll every 15 seconds made one report every minute for every
+ * creator: about 43,000 calls to publik each month for each creator. A report now goes out only
+ * when there is a comment, a message or a DM to report.
+ */
+export const LOCAL_ONLY_UNITS: ReadonlySet<string> = new Set([UNIT_POLL]);
+
 /** Flush when either threshold trips, so a flush is never a single unit. */
 export const FLUSH_UNITS = 100;
 export const FLUSH_SECONDS = 60;
@@ -317,14 +325,16 @@ export class UsageMeter {
     const entries = Object.entries(p.counts).filter(([, n]) => n > 0);
     if (entries.length === 0) return;
     const at = this.now();
-    const batch: UsageBatch = {
-      idempotency_key: wireKey(`${this.opts.tenantId}.${at}.${randomToken(6)}`),
-      units: entries.map(([slug, count]) => ({ slug, count, at })),
-    };
     for (const [slug, count] of entries) await this.opts.db.addUsage(slug, count);
+    const wire = entries.filter(([slug]) => !LOCAL_ONLY_UNITS.has(slug));
 
     const queue = await this.loadQueue();
-    queue.push(batch);
+    if (wire.length > 0) {
+      queue.push({
+        idempotency_key: wireKey(`${this.opts.tenantId}.${at}.${randomToken(6)}`),
+        units: wire.map(([slug, count]) => ({ slug, count, at })),
+      });
+    }
     while (queue.length > MAX_QUEUED_BATCHES) {
       const dropped = queue.shift();
       console.warn(
@@ -352,8 +362,14 @@ export class UsageMeter {
 
     let attempts = 0;
     while (queue.length > 0 && attempts < MAX_BATCHES_PER_FLUSH) {
-      attempts++;
       const batch = queue[0]!;
+      // A batch queued by an older build can still hold poll units: they are not reported.
+      batch.units = batch.units.filter((u) => !LOCAL_ONLY_UNITS.has(u.slug));
+      if (batch.units.length === 0) {
+        queue.shift();
+        continue;
+      }
+      attempts++;
       const outcome = await this.post(batch);
       if (outcome.kind === "accepted") {
         queue.shift();

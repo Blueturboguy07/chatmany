@@ -64,3 +64,61 @@ export async function purgeExpired(db: D1Database, nowSeconds: number, opts: Pur
   }
   return deleted;
 }
+
+/** D1 allows 10 GB for one database on the paid plan. */
+export const D1_LIMIT_BYTES = 10 * 1024 * 1024 * 1024;
+/** The daily job warns from this share of the limit, so there is time to move data. */
+export const D1_WARN_SHARE = 0.6;
+
+export interface StorageReport {
+  size_bytes: number | null;
+  limit_bytes: number;
+  share: number | null;
+  warn: boolean;
+  tenants: number;
+  rows: Record<string, number>;
+  bytes_per_tenant: number | null;
+  /** Tenants the database can hold at the present mean size, to the warn line. */
+  tenants_to_warn: number | null;
+  largest: Array<{ tenant_id: string; rows: number }>;
+}
+
+/**
+ * How full the shared database is. D1 reports the size with every query (meta.size_after), so
+ * the figure is Cloudflare's own. Every tenant's rows are in this one database; this is the
+ * number that says when they must move to their own storage.
+ */
+export async function storageReport(db: D1Database): Promise<StorageReport> {
+  const probe = await db.prepare("SELECT COUNT(*) AS n FROM tenants").run();
+  const size = Number((probe.meta as { size_after?: number } | undefined)?.size_after ?? NaN);
+  const tenants = Number((probe.results?.[0] as { n?: number } | undefined)?.n ?? 0);
+  const rows: Record<string, number> = {};
+  for (const [table] of RETAINED_TABLES) {
+    const r = await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
+    rows[table] = Number(r?.n ?? 0);
+  }
+  const big = await db
+    .prepare(
+      `SELECT tenant_id, SUM(n) AS rows FROM (
+         SELECT tenant_id, COUNT(*) AS n FROM processed_comments GROUP BY tenant_id
+         UNION ALL SELECT tenant_id, COUNT(*) AS n FROM events GROUP BY tenant_id
+         UNION ALL SELECT tenant_id, COUNT(*) AS n FROM conversations GROUP BY tenant_id
+         UNION ALL SELECT tenant_id, COUNT(*) AS n FROM metered_events GROUP BY tenant_id
+       ) GROUP BY tenant_id ORDER BY rows DESC LIMIT 10`,
+    )
+    .all<{ tenant_id: string; rows: number }>();
+  const sizeBytes = Number.isFinite(size) ? size : null;
+  const share = sizeBytes === null ? null : sizeBytes / D1_LIMIT_BYTES;
+  const perTenant = sizeBytes !== null && tenants > 0 ? Math.round(sizeBytes / tenants) : null;
+  return {
+    size_bytes: sizeBytes,
+    limit_bytes: D1_LIMIT_BYTES,
+    share,
+    warn: share !== null && share >= D1_WARN_SHARE,
+    tenants,
+    rows,
+    bytes_per_tenant: perTenant,
+    tenants_to_warn: perTenant ? Math.floor((D1_LIMIT_BYTES * D1_WARN_SHARE) / perTenant) : null,
+    largest: (big.results ?? []).map((r) => ({ tenant_id: r.tenant_id, rows: Number(r.rows) })),
+  };
+}

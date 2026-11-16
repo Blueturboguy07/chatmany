@@ -57,6 +57,16 @@ export interface RunnerLimits {
   sweepPagesPerRun: number;
   /** Spacing between sends, ms. */
   sendIntervalMs: number;
+  /** With this many watched posts or fewer, every poll reads every post. */
+  pollAllMediaUpTo: number;
+  /** Above that: at most this many posts with a recent new comment are read on every poll. */
+  maxHotMediaPerPoll: number;
+  /** Above that: this many of the other posts are read on each poll, in turn. */
+  coldMediaPerPoll: number;
+  /** A post counts as recent for this long after its last new comment. */
+  hotMediaSeconds: number;
+  /** Instagram's own use figure (percent) at which this tenant stops and cools down. */
+  usageStopPercent: number;
 }
 
 export const DEFAULT_LIMITS: RunnerLimits = {
@@ -67,6 +77,11 @@ export const DEFAULT_LIMITS: RunnerLimits = {
   hourlySendCap: 750,
   sweepPagesPerRun: 8,
   sendIntervalMs: 1200,
+  pollAllMediaUpTo: 4,
+  maxHotMediaPerPoll: 8,
+  coldMediaPerPoll: 3,
+  hotMediaSeconds: 30 * 60,
+  usageStopPercent: 90,
 };
 
 export interface RunnerDeps {
@@ -90,6 +105,8 @@ export interface RunReport {
   sends: number;
   skipped: "cooldown" | "credit" | null;
   rateLimited: boolean;
+  /** True when the tenant has no automation switched on: the caller polls it slowly. */
+  idle?: boolean;
 }
 
 const K_COOLDOWN = "rate_limited_until";
@@ -97,6 +114,12 @@ const K_LAST_SEND = "last_send_at_ms";
 const K_PAUSED_CREDIT = "paused_credit";
 const K_SWEEP_IDX = "sweep_media_idx";
 const K_SWEEP_CURSOR = "sweep_cursor:";
+/** Post id -> unix seconds of its last new comment (pickMedia). */
+const K_MEDIA_HOT = "media_hot";
+/** Where the turn through the other posts stands. */
+const K_COLD_IDX = "media_cold_idx";
+/** Instagram's last rate-limit header for this tenant: {at, percent, raw}. Read by /meter. */
+export const K_GRAPH_USAGE = "graph_usage";
 /** Newest inbound DM time (unix seconds) the message poll has read. */
 const K_MSG_CURSOR = "msg_poll_cursor";
 /** Look-back under the message cursor, as the single-tenant poller (src/poller/messagePoll.ts). */
@@ -156,7 +179,10 @@ export class TenantRunner {
       // A tenant with nothing switched on has nothing to watch: no Graph call and no metered
       // poll. This matters once the poll runs every few seconds (HOSTED_POLL_INTERVAL_SECONDS).
       const campaigns = await this.deps.db.getActiveCampaigns();
-      if (campaigns.length === 0) return await this.finish(report);
+      if (campaigns.length === 0) {
+        report.idle = true;
+        return await this.finish(report);
+      }
 
       // Guard first: a paused tenant makes no Graph call, so it is not charged for a poll either.
       const guard = await this.guard(report);
@@ -164,7 +190,7 @@ export class TenantRunner {
       await this.deps.meter.record(UNIT_POLL, 1);
 
       const ctx = await this.begin(report);
-      const media = [...new Set(campaigns.map((c) => c.media_id))];
+      const media = await this.pickMedia([...new Set(campaigns.map((c) => c.media_id))]);
       for (const mediaId of media) {
         if (this.outOfBudget(ctx, report)) break;
         const page = await this.safeGetComments(mediaId, 50);
@@ -172,6 +198,7 @@ export class TenantRunner {
         await this.ingestComments(ctx, report, page.comments, campaigns);
       }
       await this.pollMessages(ctx, report, campaigns);
+      await this.noteGraphUsage(report);
       await this.end(ctx);
       return await this.finish(report);
     });
@@ -269,7 +296,7 @@ export class TenantRunner {
       // 2026-09-15; the tenant stops instead, cools down, and picks the comment up next run.
       maxRetries: 0,
     });
-    const ctx: RunContext = { startedAt, queue, newComments: 0, hourRemaining: Math.max(0, this.limits.hourlySendCap - sentThisHour), engine: null as unknown as Engine };
+    const ctx: RunContext = { startedAt, queue, newComments: 0, hotMedia: new Set<string>(), hourRemaining: Math.max(0, this.limits.hourlySendCap - sentThisHour), engine: null as unknown as Engine };
     ctx.engine = new Engine(this.deps.db, this.deps.client, queue, {
       onSendAttempt: () => {
         report.sends++;
@@ -288,6 +315,55 @@ export class TenantRunner {
 
   private async end(ctx: RunContext): Promise<void> {
     if (ctx.queue.lastSendAtMs > 0) await this.deps.storage.put(K_LAST_SEND, ctx.queue.lastSendAtMs);
+    if (ctx.hotMedia.size > 0) {
+      const hot = (await this.deps.storage.get<Record<string, number>>(K_MEDIA_HOT)) ?? {};
+      const t = this.now();
+      for (const id of ctx.hotMedia) hot[id] = t;
+      for (const id of Object.keys(hot)) if (t - hot[id]! > this.limits.hotMediaSeconds) delete hot[id];
+      await this.deps.storage.put(K_MEDIA_HOT, hot);
+    }
+  }
+
+  /**
+   * Which posts this poll reads. One Graph read per post per poll is fine for a few posts; a
+   * creator who watches 25 posts would make 6,000 reads an hour, which is the path to Instagram's
+   * rate limit (the 613 spiral). So above `pollAllMediaUpTo` posts, a poll reads the posts that
+   * had a new comment in the last `hotMediaSeconds` (newest first, capped) and takes the others
+   * in turn, a few per poll. Every post is still read every few polls.
+   */
+  private async pickMedia(all: string[]): Promise<string[]> {
+    if (all.length <= this.limits.pollAllMediaUpTo) return all;
+    const t = this.now();
+    const hotMap = (await this.deps.storage.get<Record<string, number>>(K_MEDIA_HOT)) ?? {};
+    const hot = all
+      .filter((id) => t - (hotMap[id] ?? 0) <= this.limits.hotMediaSeconds)
+      .sort((a, b) => (hotMap[b] ?? 0) - (hotMap[a] ?? 0))
+      .slice(0, this.limits.maxHotMediaPerPoll);
+    const hotSet = new Set(hot);
+    const cold = all.filter((id) => !hotSet.has(id)).sort();
+    const picked = [...hot];
+    if (cold.length > 0) {
+      const start = ((await this.deps.storage.get<number>(K_COLD_IDX)) ?? 0) % cold.length;
+      const n = Math.min(this.limits.coldMediaPerPoll, cold.length);
+      for (let i = 0; i < n; i++) picked.push(cold[(start + i) % cold.length]!);
+      await this.deps.storage.put(K_COLD_IDX, (start + n) % cold.length);
+    }
+    return picked;
+  }
+
+  /**
+   * Keep Instagram's own figure for how much of the rate limit this account has used, and stop
+   * before the limit instead of at it. The header is read from the last Graph answer of the poll.
+   */
+  private async noteGraphUsage(report: RunReport): Promise<void> {
+    const raw = (this.deps.client as { lastUsage?: string | null }).lastUsage;
+    if (!raw) return;
+    const percent = usagePercent(raw);
+    await this.deps.storage.put(K_GRAPH_USAGE, { at: this.now(), percent, raw: raw.slice(0, 600) });
+    if (percent !== null && percent >= this.limits.usageStopPercent) {
+      console.warn(`[chatmany] ${this.deps.tenantId}: Instagram use is at ${percent}%; cooling down`);
+      report.rateLimited = true;
+    }
   }
 
   private outOfBudget(ctx: RunContext, report: RunReport): boolean {
@@ -351,6 +427,8 @@ export class TenantRunner {
     for (const c of unseen) {
       if (this.outOfBudget(ctx, report)) return;
       ctx.newComments++;
+      const mediaOfComment = (c as { media_id?: string }).media_id;
+      if (mediaOfComment) ctx.hotMedia.add(mediaOfComment);
       await this.meterEventOnce(report, commentKey(c.id), charged);
       const evt: NormalizedComment = {
         kind: "comment",
@@ -454,6 +532,22 @@ interface RunContext {
   engine: Engine;
   newComments: number;
   hourRemaining: number;
+  /** Posts that had a new comment in this run. */
+  hotMedia: Set<string>;
+}
+
+/**
+ * The highest percent in an X-Business-Use-Case-Usage or X-App-Usage header, or null when the
+ * header holds none. Both are JSON; the figures are call_count, total_cputime and total_time.
+ */
+export function usagePercent(raw: string): number | null {
+  let max: number | null = null;
+  const re = /"(call_count|total_cputime|total_time)"\s*:\s*(\d+(?:\.\d+)?)/g;
+  for (let m = re.exec(raw); m; m = re.exec(raw)) {
+    const n = Number(m[2]);
+    if (Number.isFinite(n) && (max === null || n > max)) max = n;
+  }
+  return max;
 }
 
 function msg(e: unknown): string {
