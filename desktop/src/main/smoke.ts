@@ -190,7 +190,8 @@ export async function runSmoke(ctx: { win: BrowserWindow; gate: PublikGate; conf
       const asked = await waitFor(() => opened.length > 0, 10_000);
       const claimUrl = opened[0] ?? "";
       check("Sign in with publik opens publik's claim page in the system browser", asked && claimUrl.startsWith(`${config.origin}/claim/`), claimUrl);
-      check("the gate says it is waiting for the browser", (await js<string>("document.body.innerText")).includes("Waiting for you to sign in"));
+      // A slow machine (x64 under Rosetta) may draw the note a moment after the browser opened.
+      check("the gate says it is waiting for the browser", await waitFor(async () => (await js<string>("document.body.innerText")).includes("Waiting for you to sign in"), 5_000));
       // The person signs in: the fake publik marks the install claimed when its claim page is opened.
       if (claimUrl) await fetch(claimUrl).catch(() => undefined);
       const passed = await waitFor(async () => (await screen()) === "connect", 30_000);
