@@ -1,0 +1,289 @@
+name: desktop build
+
+# Builds the chatmany desktop app (desktop/): unit tests and typecheck, then a
+# macOS dmg (arm64 and x64) and a Windows installer (x64), then a smoke test of
+# each BUILT app on its runner (desktop/scripts/smoke.mjs), with screenshots.
+#
+# Optional repository secrets (none is required; the job summary says which ones were there):
+#   CSC_LINK, CSC_KEY_PASSWORD                         Developer ID Application certificate (.p12, base64) and its password
+#   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID  notarization (team R5R3ZS54LV)
+#   PUBLIK_APP_TOKEN                                   the publik app token for slug "chatmany" (pat_chatmany_...)
+# Without the certificate the mac app is ad-hoc signed and not notarized. Without the app token
+# the app builds, and shows "cannot sign in" instead of Sign in with publik.
+
+on:
+  push:
+    branches: [desktop-app]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # A build machine is not a user: no usage counting from CI (the smoke test turns it on for its fake publik only).
+  DO_NOT_TRACK: "1"
+  ELECTRON_BUILDER_VERSION: "26.18.0"
+  # electron-builder downloads the Electron it packages; the npm package's own copy is not needed.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  check:
+    name: Unit tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  mac:
+    name: macOS dmg (arm64 + x64)
+    needs: check
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+
+      - name: Which secrets are there (names only)
+        id: secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
+        run: |
+          sign=false; notarize=false; token=false
+          if [ -n "${CSC_LINK:-}" ] && [ -n "${CSC_KEY_PASSWORD:-}" ]; then sign=true; fi
+          if [ "$sign" = true ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then notarize=true; fi
+          if [ -n "${PUBLIK_APP_TOKEN:-}" ]; then token=true; fi
+          echo "sign=$sign" >> "$GITHUB_OUTPUT"
+          echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+          echo "sign=$sign notarize=$notarize token=$token"
+
+      # A keychain of our own with the Developer ID certificate AND Apple's intermediates
+      # (a .p12 holds only the leaf, and without the chain electron-builder skips signing).
+      - name: Set up macOS code signing
+        if: steps.secrets.outputs.sign == 'true'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/chatmany-signing.keychain-db"
+          KPW="$(openssl rand -base64 24)"
+          security create-keychain -p "$KPW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KPW" "$KEYCHAIN"
+          echo "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security import build-resources/apple-developer-id-intermediates.pem -k "$KEYCHAIN" || true
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPW" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+          echo "Signing identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN" | sed -E 's/[0-9A-F]{40}/<hash>/'
+          echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "MAC_SIGN=1" >> "$GITHUB_ENV"
+
+      - run: npm run build
+
+      - name: Build the dmgs
+        env:
+          PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.secrets.outputs.sign }}
+        run: npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --mac --publish never
+
+      # electron-builder notarizes and staples the .app; the dmg around it gets its own ticket here,
+      # so a downloaded dmg opens without asking Apple first.
+      - name: Notarize and staple the dmgs
+        if: steps.secrets.outputs.notarize == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for dmg in release/*.dmg; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+          done
+
+      - name: Check the signature
+        run: |
+          set -euo pipefail
+          for app in release/mac-arm64/chatmany.app release/mac/chatmany.app; do
+            [ -d "$app" ] || continue
+            codesign --verify --deep --strict --verbose=2 "$app"
+            codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier|Signature|flags)=' || true
+          done
+
+      - name: Smoke test (arm64, the built dmg)
+        run: |
+          set -euo pipefail
+          DMG="$(ls release/*-mac-arm64.dmg | head -1)"
+          MNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
+          rm -rf "$RUNNER_TEMP/arm64" && mkdir -p "$RUNNER_TEMP/arm64"
+          cp -R "$MNT/chatmany.app" "$RUNNER_TEMP/arm64/"
+          hdiutil detach "$MNT"
+          node scripts/smoke.mjs "$RUNNER_TEMP/arm64/chatmany.app/Contents/MacOS/chatmany" smoke-out/mac-arm64
+
+      - name: Smoke test (x64 under Rosetta, the built dmg)
+        id: smoke_x64
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta is not on this runner: the x64 app was built but not started." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          DMG="$(ls release/*-mac-x64.dmg | head -1)"
+          MNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
+          rm -rf "$RUNNER_TEMP/x64" && mkdir -p "$RUNNER_TEMP/x64"
+          cp -R "$MNT/chatmany.app" "$RUNNER_TEMP/x64/"
+          hdiutil detach "$MNT"
+          node scripts/smoke.mjs "$RUNNER_TEMP/x64/chatmany.app/Contents/MacOS/chatmany" smoke-out/mac-x64
+
+      - name: Upload the dmgs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-mac-dmg
+          path: desktop/release/*.dmg
+          if-no-files-found: error
+
+      - name: Upload the smoke test screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-mac-smoke
+          path: desktop/smoke-out/
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          SIGN: ${{ steps.secrets.outputs.sign }}
+          NOTARIZE: ${{ steps.secrets.outputs.notarize }}
+          TOKEN: ${{ steps.secrets.outputs.token }}
+          SMOKE_X64: ${{ steps.smoke_x64.outcome }}
+        run: |
+          {
+            echo "### chatmany for macOS"
+            echo ""
+            if [ "$SIGN" = true ]; then echo "- Signed with the Developer ID certificate, hardened runtime on."; else echo "- **Unsigned**: the CSC_LINK / CSC_KEY_PASSWORD secrets are not set. The app is ad-hoc signed; macOS asks before the first open."; fi
+            if [ "$NOTARIZE" = true ]; then echo "- Notarized, and the dmgs are stapled."; else echo "- **Not notarized**: the Apple secrets (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID) or the certificate are not set."; fi
+            if [ "$TOKEN" = true ]; then echo "- The publik app token is in the build."; else echo "- **No publik app token**: the PUBLIK_APP_TOKEN secret is not set. This build shows \"cannot sign in\" instead of Sign in with publik."; fi
+            echo "- x64 smoke test: ${SMOKE_X64:-not run}"
+            echo ""
+            echo "Files:"
+            ls -la release/*.dmg 2>/dev/null | awk '{print "- " $NF " (" $5 " bytes)"}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows installer (x64)
+    needs: check
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+
+      - name: Is the app token there (name only)
+        id: secrets
+        shell: bash
+        env:
+          PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
+        run: |
+          if [ -n "${PUBLIK_APP_TOKEN:-}" ]; then echo "token=true" >> "$GITHUB_OUTPUT"; else echo "token=false" >> "$GITHUB_OUTPUT"; fi
+
+      - run: npm run build
+
+      - name: Build the installer
+        shell: bash
+        env:
+          PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --win --x64 --publish never
+
+      - name: Smoke test (the installed app)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = Get-ChildItem release\*-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait
+          $app = Join-Path $env:LOCALAPPDATA "Programs\chatmany\chatmany.exe"
+          if (-not (Test-Path $app)) {
+            Write-Host "The installed app is not at $app; testing release\win-unpacked instead."
+            "The silent install did not put chatmany.exe in %LOCALAPPDATA%\Programs\chatmany; the smoke test ran release\win-unpacked." | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
+            $app = (Resolve-Path release\win-unpacked\chatmany.exe).Path
+          }
+          node scripts/smoke.mjs $app smoke-out\windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-windows-exe
+          path: desktop/release/*.exe
+          if-no-files-found: error
+
+      - name: Upload the smoke test screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-windows-smoke
+          path: desktop/smoke-out/
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ steps.secrets.outputs.token }}
+        run: |
+          {
+            echo "### chatmany for Windows"
+            echo ""
+            echo "- **Unsigned**: no Windows code-signing certificate is configured. Windows SmartScreen asks before the first open."
+            if [ "$TOKEN" = true ]; then echo "- The publik app token is in the build."; else echo "- **No publik app token**: the PUBLIK_APP_TOKEN secret is not set. This build shows \"cannot sign in\" instead of Sign in with publik."; fi
+            echo ""
+            echo "Files:"
+            ls -la release/*.exe 2>/dev/null | awk '{print "- " $NF " (" $5 " bytes)"}'
+          } >> "$GITHUB_STEP_SUMMARY"
