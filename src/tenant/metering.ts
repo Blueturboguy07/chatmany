@@ -181,10 +181,10 @@ export class UsageMeter {
   /**
    * Version 1 counts of chatmany.event are wrong (one DM counted on every poll) and were never
    * reported, so they are dropped, once: from the pending counts, from every queued batch, and
-   * from D1 (`units` back to `reported` for that slug). Poll and send counts were right and stay
-   * queued, under their own idempotency keys. Nothing of version 1 ever reached publik (every
-   * report threw before it was sent), so no batch here was settled before and none is settled
-   * twice.
+   * from D1 (`units` back to `reported` for that slug). Poll and send counts were right; they stay
+   * queued, summed into one backlog batch. Nothing of version 1 ever reached publik (every report
+   * threw before it was sent, and publik holds no chatmany usage row), so no batch here was
+   * settled before and none is settled twice.
    *
    * It runs before this meter records anything, and only the tenant's own object writes its
    * usage rows, so the D1 correction cannot remove a version 2 count.
@@ -201,16 +201,30 @@ export class UsageMeter {
       if (!Object.values(pending.counts).some((n) => n > 0)) pending.since = 0;
       await storage.put(PENDING_KEY, pending);
     }
-    const queue = await this.loadQueue();
-    const kept: UsageBatch[] = [];
-    for (const batch of queue) {
-      const units = batch.units.filter((u) => {
-        if (u.slug !== UNIT_EVENT) return true;
-        dropped += u.count;
-        return false;
-      });
-      if (units.length > 0) kept.push({ ...batch, units });
+    // What is left of the old queue goes to publik as ONE batch, not one request per minute of
+    // backlog. That is safe only because no old batch was ever settled (see the note above).
+    const counts: Record<string, number> = {};
+    let lastAt = 0;
+    for (const batch of await this.loadQueue()) {
+      for (const u of batch.units) {
+        if (u.slug === UNIT_EVENT) {
+          dropped += u.count;
+          continue;
+        }
+        counts[u.slug] = (counts[u.slug] ?? 0) + u.count;
+        lastAt = Math.max(lastAt, u.at);
+      }
     }
+    const kept: UsageBatch[] = Object.values(counts).some((n) => n > 0)
+      ? [
+          {
+            idempotency_key: wireKey(`${this.opts.tenantId}.meter-v${METER_VERSION}.backlog`),
+            units: Object.entries(counts)
+              .filter(([, n]) => n > 0)
+              .map(([slug, count]) => ({ slug, count, at: lastAt })),
+          },
+        ]
+      : [];
     this.queue = kept;
     await storage.put(QUEUE_KEY, kept);
     await storage.put(VERSION_KEY, METER_VERSION);

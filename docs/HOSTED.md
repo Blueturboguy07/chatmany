@@ -157,7 +157,7 @@ check ever reached publik (the error was caught as "unreachable" and retried for
 **Meter version 2** (2026-11-16): the first run of this code in each tenant's object drops every
 `chatmany.event` unit counted under the old rule (pending, queued, and `units` back to `reported`
 in D1). Those units were over-counted and never reported, so none is charged. Poll and send counts
-stay queued and are reported under their own keys.
+were right: they are summed into one backlog batch (key `<tenant>.meter-v2.backlog`) and reported.
 
 **Retention**: the daily `0 3 * * *` cron deletes events, processed comments, comment actions,
 send claims, metered-event keys and contacts (conversations) older than 90 days, across every tenant

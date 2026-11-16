@@ -311,8 +311,10 @@ describe("the one-time upgrade from the old event count", () => {
     expect(sent.filter((u) => u.slug === UNIT_EVENT)).toEqual([]);
     expect(sent.filter((u) => u.slug === UNIT_POLL).reduce((n, u) => n + u.units, 0)).toBe(12);
     expect(sent.filter((u) => u.slug === UNIT_SEND).reduce((n, u) => n + u.units, 0)).toBe(5);
-    // The kept batches keep their keys (none was ever settled), on the wire form publik accepts.
-    expect(m.calls.map((c) => c.batch.idempotency_key).slice(0, 2)).toEqual(["t_one.1794803100.aaaaaa", "t_one.1794803220.cccccc"]);
+    // The old backlog goes as one batch (none of it was ever settled), then the pending counts.
+    expect(m.calls).toHaveLength(2);
+    expect(m.calls[0]!.batch.idempotency_key).toBe(`t_one.meter-v${METER_VERSION}.backlog`);
+    expect(m.calls[0]!.batch.units).toEqual([{ slug: UNIT_POLL, units: 10 }, { slug: UNIT_SEND, units: 5 }]);
 
     const rows = Object.fromEntries((await m.db.usageForMonth()).map((r) => [r.slug, r]));
     expect(rows[UNIT_EVENT]).toMatchObject({ units: 0, reported: 0 });
