@@ -154,6 +154,11 @@ global `fetch` on an object and call it as a method: workerd throws "Illegal inv
 anything is sent. Until 2026-11-16 that is what both calls did, so no usage report and no balance
 check ever reached publik (the error was caught as "unreachable" and retried forever).
 
+**After a deploy, wait for the object.** A tenant's Durable Object kept running the previous
+version for about 5 minutes after `wrangler deploy` on 2026-11-16 (deploy 08:57:10 UTC, first new
+code in the object 09:02:16). Confirm with the `build` field of `GET /hosted/tenants/{id}/meter`
+before you judge a fix.
+
 **Meter version 2** (2026-11-16): the first run of this code in each tenant's object drops every
 `chatmany.event` unit counted under the old rule (pending, queued, and `units` back to `reported`
 in D1). Those units were over-counted and never reported, so none is charged. Poll and send counts
@@ -176,6 +181,7 @@ All under `Authorization: Bearer <INFRA_ADMIN_TOKEN>`, constant-time compared.
 | `POST /hosted/tenants/{id}/connect` | store the token encrypted, mark active, call `POST /me/subscribed_apps`, arm the alarm |
 | `POST /hosted/tenants/{id}/{poll,sweep,subscribe,pause,resume}` | operator actions |
 | `GET /hosted/tenants/{id}/{status,usage,export}` | object state, this month's metered units, full data export |
+| `GET /hosted/tenants/{id}/meter` | the object's build marker, meter queue and pending counts, the last usage report (time, HTTP status, outcome, error text), the one-time upgrade result, and the last balance answer. Secret-free. `wrangler tail` shows nothing from a Durable Object, so this is how to see its live state |
 
 `POST /me/subscribed_apps?subscribed_fields=comments,messages` is what actually turns deliveries
 on. **No call to it existed anywhere in this repo** — which is why the deployed Worker still

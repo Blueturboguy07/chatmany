@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BalanceGate } from "../src/tenant/balance";
 import { TenantDb } from "../src/tenant/db";
-import { FLUSH_UNITS, MAX_BATCHES_PER_FLUSH, METER_VERSION, UNIT_EVENT, UNIT_POLL, UNIT_SEND, UsageMeter, readResult, wireKey } from "../src/tenant/metering";
+import { FLUSH_UNITS, MAX_BATCHES_PER_FLUSH, METER_VERSION, UNIT_EVENT, UNIT_POLL, UNIT_SEND, UsageMeter, readMeterState, readResult, wireKey } from "../src/tenant/metering";
 import { makeTestDb } from "./helpers/fakeD1";
 import { FakeStorage } from "./helpers/fakeStorage";
 
@@ -355,5 +355,30 @@ describe("the one-time upgrade from the old event count", () => {
     await m.meter.record(UNIT_EVENT, 3);
     await m.meter.flush(true);
     expect(m.calls.flatMap((c) => c.batch.units)).toEqual([{ slug: UNIT_EVENT, units: 3 }]);
+  });
+});
+
+describe("the operator's meter diagnostic", () => {
+  it("keeps the last attempt's outcome and error text, and the upgrade result", async () => {
+    const m = makeMeter({ throwOnce: true });
+    await m.storage.put("usage:queue", [{ idempotency_key: "t_one.1.aaaaaa", units: [{ slug: UNIT_EVENT, count: 9, at: 1 }, { slug: UNIT_POLL, count: 1, at: 1 }] }]);
+    await m.meter.flush(true);
+    let state = await readMeterState(m.storage);
+    expect(state).toMatchObject({ version: METER_VERSION, queue_length: 1, queue_totals: { [UNIT_POLL]: 1 } });
+    expect(state.diag).toMatchObject({ last_outcome: "retry", last_status: null, upgrade_dropped: 9, upgrade_error: null });
+    expect(String((state.diag as { last_error: string }).last_error)).toContain("network down");
+
+    await m.meter.flush(true);
+    state = await readMeterState(m.storage);
+    expect(state.queue_length).toBe(0);
+    expect(state.diag).toMatchObject({ last_outcome: "accepted", last_status: 200, last_error: null });
+    expect((state.diag as { last_ok_at: number | null }).last_ok_at).not.toBeNull();
+  });
+
+  it("says which setting is missing when nothing can be reported", async () => {
+    const m = makeMeter({ publikUserId: null });
+    await m.meter.record(UNIT_SEND, 1);
+    await m.meter.flush(true);
+    expect((await readMeterState(m.storage)).diag).toMatchObject({ last_outcome: "not_configured", last_error: "missing: publik_user_id" });
   });
 });
