@@ -97,6 +97,10 @@ const K_LAST_SEND = "last_send_at_ms";
 const K_PAUSED_CREDIT = "paused_credit";
 const K_SWEEP_IDX = "sweep_media_idx";
 const K_SWEEP_CURSOR = "sweep_cursor:";
+/** Newest inbound DM time (unix seconds) the message poll has read. */
+const K_MSG_CURSOR = "msg_poll_cursor";
+/** Look-back under the message cursor, as the single-tenant poller (src/poller/messagePoll.ts). */
+const MSG_OVERLAP_SECONDS = 120;
 
 export class TenantRunner {
   private readonly limits: RunnerLimits;
@@ -368,21 +372,31 @@ export class TenantRunner {
       console.warn(`[chatmany] ${this.deps.tenantId}: conversation read failed (${msg(e)})`);
       return;
     }
-    for (const convo of conversations) {
-      for (const m of convo.messages?.data ?? []) {
-        if (this.outOfBudget(ctx, report)) return;
-        const from = m.from?.id;
-        if (!from || from === this.deps.igUserId) continue;
-        report.events++;
-        await this.deps.meter.record(UNIT_EVENT, 1);
-        const evt: NormalizedMessage = {
-          kind: "message",
-          igsid: from,
-          text: m.message,
-          timestamp: toUnixSeconds(m.created_time),
-        };
-        await ctx.engine.handleMessage(evt, campaigns);
+    // Every poll reads the same 20 conversations again. The engine ignores a message it already
+    // acted on, but each read used to be metered as a new event, so one DM was billed every 15
+    // seconds for as long as it stayed in the newest 20. Now a message is read again only inside
+    // a short look-back under the cursor, and metered only the first time it is seen.
+    const cursor = (await this.deps.storage.get<number>(K_MSG_CURSOR)) ?? 0;
+    let newest = cursor;
+    try {
+      for (const convo of conversations) {
+        for (const m of convo.messages?.data ?? []) {
+          if (this.outOfBudget(ctx, report)) return;
+          const from = m.from?.id;
+          if (!from || from === this.deps.igUserId) continue;
+          const at = toUnixSeconds(m.created_time);
+          if (cursor > 0 && at < cursor - MSG_OVERLAP_SECONDS) continue;
+          if (at > cursor) {
+            report.events++;
+            await this.deps.meter.record(UNIT_EVENT, 1);
+          }
+          if (at > newest) newest = at;
+          const evt: NormalizedMessage = { kind: "message", igsid: from, text: m.message, timestamp: at };
+          await ctx.engine.handleMessage(evt, campaigns);
+        }
       }
+    } finally {
+      if (newest > cursor) await this.deps.storage.put(K_MSG_CURSOR, newest);
     }
   }
 

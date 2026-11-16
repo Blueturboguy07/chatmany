@@ -210,6 +210,31 @@ describe("what is metered", () => {
     expect(units[UNIT_EVENT]).toBe(2);
   });
 
+  it("charges an inbound DM once, not on every poll that reads it again", async () => {
+    let now = Math.floor(Date.now() / 1000);
+    const h = harness({ comments: 0, now: () => now });
+    await h.db.upsertCampaign(campaign(), true);
+    const at = new Date(now * 1000 - 5_000).toISOString();
+    h.client.conversations = [
+      { id: "cv1", messages: { data: [{ id: "m1", from: { id: "u7" }, message: "hello", created_time: at }, { id: "m0", from: { id: "owner" }, message: "ours", created_time: at }] } },
+    ];
+    for (let i = 0; i < 4; i++) {
+      await h.runner.runPoll();
+      now += 15;
+    }
+    await h.runner.flushUsage(true);
+    const events = h.publik.usage.flatMap((u) => u.units).filter((u) => u.slug === UNIT_EVENT).reduce((n, u) => n + u.units, 0);
+    expect(events).toBe(1);
+
+    // A new message in the same conversation is charged once more.
+    h.client.conversations[0]!.messages!.data!.unshift({ id: "m2", from: { id: "u7" }, message: "again", created_time: new Date(now * 1000).toISOString() });
+    await h.runner.runPoll();
+    await h.runner.runPoll();
+    await h.runner.flushUsage(true);
+    const after = h.publik.usage.flatMap((u) => u.units).filter((u) => u.slug === UNIT_EVENT).reduce((n, u) => n + u.units, 0);
+    expect(after).toBe(2);
+  });
+
   it("does not read or charge for comments older than Instagram's 7-day reply window", async () => {
     const h = harness({ ageSeconds: 8 * 86400 });
     await h.db.upsertCampaign(campaign(), true);
