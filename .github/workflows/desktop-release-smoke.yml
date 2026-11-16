@@ -112,15 +112,23 @@ jobs:
         if: ${{ !cancelled() && steps.guard.outcome == 'success' }}
         run: node scripts/smoke.mjs "$RUNNER_TEMP/app/chatmany.app/Contents/MacOS/chatmany" "smoke-out/mac-$ARCH"
 
-      - name: Gatekeeper log of the launches
+      - name: Gatekeeper evidence of the launches (for information)
         if: ${{ !cancelled() }}
         timeout-minutes: 5
         run: |
-          log show --last 30m --style compact \
-            --predicate 'process == "syspolicyd" AND (eventMessage CONTAINS[c] "chatmany" OR eventMessage CONTAINS[c] "publikhq")' \
-            >"smoke-out/mac-$ARCH/gatekeeper-log.txt" 2>&1 || true
-          echo "syspolicyd lines about chatmany: $(grep -c . "smoke-out/mac-$ARCH/gatekeeper-log.txt" || true)"
-          tail -n 25 "smoke-out/mac-$ARCH/gatekeeper-log.txt" || true
+          # macOS logs paths as <private>, so the syspolicyd lines are kept whole, not filtered by name.
+          OUTF="smoke-out/mac-$ARCH/gatekeeper-log.txt"
+          EXE="$RUNNER_TEMP/app/chatmany.app/Contents/MacOS/chatmany"
+          {
+            echo "quarantine mark on the app's executable after the smoke test (the dmg got 0081;...):"
+            xattr -p com.apple.quarantine "$EXE" 2>&1 || true
+            echo
+            echo "syspolicyd, last 30 minutes:"
+            log show --last 30m --style compact --predicate 'process == "syspolicyd"' 2>&1 | tail -n 400 || true
+          } >"$OUTF"
+          head -n 2 "$OUTF"
+          echo "syspolicyd lines that mention an assessment, notarization or Gatekeeper: $(grep -ciE 'assess|notari|gatekeeper|GK |ticket' "$OUTF" || true)"
+          grep -iE 'assess|notari|gatekeeper|GK |ticket' "$OUTF" | tail -n 20 || true
 
       - name: Screen of the runner (only when a step failed)
         if: failure()
