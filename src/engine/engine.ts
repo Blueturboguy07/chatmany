@@ -237,6 +237,9 @@ export class Engine {
     const campaigns = activeCampaigns ?? (await this.store.getActiveCampaigns());
     for (const campaign of campaigns) {
       if (!commentTriggers(text, campaign.keywords, campaign.exclude)) continue;
+      // A message from before the automation started is not answered (Campaign.since). Seen
+      // 2026-11-16: switching on 25 automations answered an old DM that held one of their keywords.
+      if (campaign.since && evt.timestamp > 0 && evt.timestamp < campaign.since) continue;
       const key = `inbound:${campaign.campaign_id}:${evt.igsid}`;
       const body = campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
       const res = await this.attemptSend(() => this.client.sendText(evt.igsid, body), "inbound_reward", key);
