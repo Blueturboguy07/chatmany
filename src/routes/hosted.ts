@@ -323,6 +323,7 @@ async function control(env: HostedEnv, req: Request, url: URL, ctx: ExecutionCon
     if (action === "sweep" && method === "POST") return await proxy(env, tenantId, "/sweep");
     if (action === "subscribe" && method === "POST") return await proxy(env, tenantId, "/subscribe");
     if (action === "status" && method === "GET") return await proxy(env, tenantId, "/status");
+    if (action === "meter" && method === "GET") return await proxy(env, tenantId, "/meter");
     if (action === "usage" && method === "GET") {
       return json({ tenant_id: tenantId, month: await new TenantDb(env.DB, tenantId).usageForMonth() });
     }

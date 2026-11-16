@@ -32,6 +32,17 @@ export const OK_RECHECK_SECONDS = 10 * 60;
 
 const K_STATE = "balance:state";
 const K_CHECKED_AT = "balance:checked_at";
+/** The last ask: time, HTTP status, error text. Secret-free; read by GET /hosted/tenants/:id/meter. */
+const K_DIAG = "balance:diag";
+
+/** The gate's stored state, for the operator's diagnostic route. Reads only. */
+export async function readBalanceState(storage: MeterStorage): Promise<Record<string, unknown>> {
+  return {
+    state: (await storage.get<BalanceState>(K_STATE)) ?? null,
+    checked_at: (await storage.get<number>(K_CHECKED_AT)) ?? null,
+    last_ask: (await storage.get<Record<string, unknown>>(K_DIAG)) ?? null,
+  };
+}
 
 export interface BalanceOptions {
   publikUserId: string | null;
@@ -86,6 +97,13 @@ export class BalanceGate {
   }
 
   private async ask(): Promise<BalanceState | null> {
+    const at = this.now();
+    const r = await this.askOnce();
+    await this.opts.storage.put(K_DIAG, { at, status: r.status, answer: r.answer, error: r.error });
+    return r.answer;
+  }
+
+  private async askOnce(): Promise<{ answer: BalanceState | null; status: number | null; error: string | null }> {
     const url = new URL(`${String(this.opts.endpoint).replace(/\/+$/, "")}/api/v1/infra/balance`);
     url.searchParams.set("tenant", String(this.opts.publikUserId));
     try {
@@ -100,14 +118,15 @@ export class BalanceGate {
       });
       if (!res.ok) {
         console.warn(`[chatmany] balance check answered ${res.status}; keeping the last known state`);
-        return null;
+        return { answer: null, status: res.status, error: (await res.text().catch(() => "")).slice(0, 300) };
       }
       const body = (await res.json().catch(() => null)) as { can_pay?: unknown } | null;
-      if (!body || typeof body.can_pay !== "boolean") return null;
-      return body.can_pay ? "ok" : "empty";
+      if (!body || typeof body.can_pay !== "boolean") return { answer: null, status: res.status, error: "no can_pay in the answer" };
+      return { answer: body.can_pay ? "ok" : "empty", status: res.status, error: null };
     } catch (e) {
-      console.warn(`[chatmany] balance check unreachable (${e instanceof Error ? e.message : String(e)}); keeping the last known state`);
-      return null;
+      const text = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 300);
+      console.warn(`[chatmany] balance check unreachable (${text}); keeping the last known state`);
+      return { answer: null, status: null, error: text };
     }
   }
 }

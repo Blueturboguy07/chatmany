@@ -84,6 +84,56 @@ const PENDING_KEY = "usage:pending";
 const QUEUE_KEY = "usage:queue";
 const ROLLED_AT_KEY = "usage:rolledAt";
 const VERSION_KEY = "usage:version";
+const DIAG_KEY = "usage:diag";
+
+/**
+ * What the last report attempt and the one-time upgrade did, kept in the tenant's own storage so
+ * the operator can read it (GET /hosted/tenants/:id/meter). Secret-free: statuses, times, error
+ * text. Added 2026-11-16 because `wrangler tail` shows nothing from a Durable Object.
+ */
+export interface MeterDiag {
+  last_attempt_at: number | null;
+  last_status: number | null;
+  last_outcome: string | null;
+  last_error: string | null;
+  last_ok_at: number | null;
+  upgrade_at: number | null;
+  upgrade_dropped: number | null;
+  upgrade_rows: number | null;
+  upgrade_error: string | null;
+}
+
+const EMPTY_DIAG: MeterDiag = {
+  last_attempt_at: null,
+  last_status: null,
+  last_outcome: null,
+  last_error: null,
+  last_ok_at: null,
+  upgrade_at: null,
+  upgrade_dropped: null,
+  upgrade_rows: null,
+  upgrade_error: null,
+};
+
+/** The meter's stored state, for the operator's diagnostic route. Reads only. */
+export async function readMeterState(storage: MeterStorage): Promise<Record<string, unknown>> {
+  const queue = (await storage.get<UsageBatch[]>(QUEUE_KEY)) ?? [];
+  const totals: Record<string, number> = {};
+  for (const b of queue) for (const u of b.units) totals[u.slug] = (totals[u.slug] ?? 0) + u.count;
+  return {
+    version: (await storage.get<number>(VERSION_KEY)) ?? 1,
+    pending: (await storage.get<Pending>(PENDING_KEY)) ?? null,
+    queue_length: queue.length,
+    queue_totals: totals,
+    queue_head: queue.slice(0, 3).map((b) => ({ key: wireKey(b.idempotency_key), units: b.units.map((u) => ({ slug: u.slug, count: u.count })) })),
+    rolled_at: (await storage.get<number>(ROLLED_AT_KEY)) ?? null,
+    diag: { ...EMPTY_DIAG, ...((await storage.get<MeterDiag>(DIAG_KEY)) ?? {}) },
+  };
+}
+
+function errorText(e: unknown): string {
+  return (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 300);
+}
 
 /**
  * Version of what this meter's stored counts mean.
@@ -174,8 +224,18 @@ export class UsageMeter {
 
   /** Run the one-time upgrade (below) before this meter reads or writes any count. */
   private ready(): Promise<void> {
-    this.upgraded ??= this.upgrade();
+    this.upgraded ??= this.upgrade().catch(async (e) => {
+      // Never block the tenant's work on the upgrade: note it; the next object tries again.
+      console.error(`[chatmany] ${this.opts.tenantId}: meter upgrade failed (${errorText(e)})`);
+      await this.note({ upgrade_at: this.now(), upgrade_error: errorText(e) }).catch(() => undefined);
+    });
     return this.upgraded;
+  }
+
+  /** Merge into the stored diagnostics (readMeterState). */
+  private async note(patch: Partial<MeterDiag>): Promise<void> {
+    const cur = (await this.opts.storage.get<MeterDiag>(DIAG_KEY)) ?? EMPTY_DIAG;
+    await this.opts.storage.put(DIAG_KEY, { ...EMPTY_DIAG, ...cur, ...patch });
   }
 
   /**
@@ -231,11 +291,14 @@ export class UsageMeter {
     // The queue is what gets charged, and it is already right. The D1 row is the operator's view;
     // a failure here is logged and never stops the tenant's work.
     let rows = 0;
+    let rowsError: string | null = null;
     try {
       rows = await this.opts.db.forgiveUnreportedUsage(UNIT_EVENT);
     } catch (e) {
-      console.warn(`[chatmany] ${this.opts.tenantId}: could not reset the old ${UNIT_EVENT} count in D1 (${e instanceof Error ? e.message : String(e)})`);
+      rowsError = errorText(e);
+      console.warn(`[chatmany] ${this.opts.tenantId}: could not reset the old ${UNIT_EVENT} count in D1 (${rowsError})`);
     }
+    await this.note({ upgrade_at: this.now(), upgrade_dropped: dropped, upgrade_rows: rows, upgrade_error: rowsError });
     if (dropped > 0 || rows > 0) {
       console.warn(
         `[chatmany] ${this.opts.tenantId}: meter v${METER_VERSION} dropped ${dropped} queued ${UNIT_EVENT} units counted under the old rule (never reported, not charged); ${rows} month row(s) reset to the reported count`,
@@ -279,7 +342,13 @@ export class UsageMeter {
     let delivered = 0;
     let credit: CreditState = null;
     // Not configured, or a tenant with no publik owner: count in D1, report nothing, pause nothing.
-    if (!this.reportable()) return { delivered, queued: queue.length, credit, insufficientCredit: false };
+    if (!this.reportable()) {
+      await this.note({
+        last_outcome: "not_configured",
+        last_error: `missing:${this.opts.endpoint ? "" : " endpoint"}${this.opts.token ? "" : " token"}${this.opts.publikUserId ? "" : " publik_user_id"}`,
+      });
+      return { delivered, queued: queue.length, credit, insufficientCredit: false };
+    }
 
     let attempts = 0;
     while (queue.length > 0 && attempts < MAX_BATCHES_PER_FLUSH) {
@@ -320,6 +389,19 @@ export class UsageMeter {
    * `tenant` is the owning publik user's id; publik bills that user's wallet.
    */
   private async post(batch: UsageBatch): Promise<PostOutcome> {
+    const at = this.now();
+    const result = await this.postOnce(batch);
+    await this.note({
+      last_attempt_at: at,
+      last_status: result.status,
+      last_outcome: result.outcome.kind,
+      last_error: result.error,
+      ...(result.outcome.kind === "accepted" ? { last_ok_at: at } : {}),
+    });
+    return result.outcome;
+  }
+
+  private async postOnce(batch: UsageBatch): Promise<{ outcome: PostOutcome; status: number | null; error: string | null }> {
     const url = `${String(this.opts.endpoint).replace(/\/+$/, "")}/api/v1/infra/usage`;
     const key = wireKey(batch.idempotency_key);
     try {
@@ -342,20 +424,21 @@ export class UsageMeter {
         }),
         signal: AbortSignal.timeout(10_000),
       });
-      if (res.status === 402) return { kind: "insufficient_credit" };
+      const status = res.status;
+      if (status === 402) return { outcome: { kind: "insufficient_credit" }, status, error: null };
       // A duplicate idempotency key is already recorded: treat it as delivered.
-      if (res.status === 409) return { kind: "accepted", credit: null };
-      if (res.status === 400) return { kind: "rejected" };
+      if (status === 409) return { outcome: { kind: "accepted", credit: null }, status, error: null };
+      if (status === 400) return { outcome: { kind: "rejected" }, status, error: (await res.text().catch(() => "")).slice(0, 300) };
       if (!res.ok) {
-        console.warn(`[chatmany] usage ingest ${res.status} for ${this.opts.tenantId}; will retry`);
-        return { kind: "retry" };
+        console.warn(`[chatmany] usage ingest ${status} for ${this.opts.tenantId}; will retry`);
+        return { outcome: { kind: "retry" }, status, error: (await res.text().catch(() => "")).slice(0, 300) };
       }
-      return readResult(await res.json().catch(() => null), key);
+      const body = await res.json().catch(() => null);
+      const outcome = readResult(body, key);
+      return { outcome, status, error: outcome.kind === "accepted" ? null : JSON.stringify(body).slice(0, 300) };
     } catch (e) {
-      console.warn(
-        `[chatmany] usage ingest unreachable for ${this.opts.tenantId} (${e instanceof Error ? e.message : String(e)}); will retry`,
-      );
-      return { kind: "retry" };
+      console.warn(`[chatmany] usage ingest unreachable for ${this.opts.tenantId} (${errorText(e)}); will retry`);
+      return { outcome: { kind: "retry" }, status: null, error: errorText(e) };
     }
   }
 

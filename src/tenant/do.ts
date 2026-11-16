@@ -14,8 +14,11 @@ import { InstagramClient } from "../api/client";
 import { refreshLongLivedToken } from "../api/client";
 import type { HostedEnv, NormalizedEvent } from "../types";
 import { TenantDb, now } from "./db";
-import { BalanceGate } from "./balance";
-import { UsageMeter } from "./metering";
+import { BalanceGate, readBalanceState } from "./balance";
+import { UsageMeter, readMeterState } from "./metering";
+
+/** Which build this object runs; shown by the /meter diagnostic so a deploy can be confirmed live. */
+export const BUILD = "meter-v2-diag-1";
 import { TenantRunner } from "./runner";
 import {
   getTenant,
@@ -113,6 +116,29 @@ export class TenantDO implements DurableObject {
         await this.ctx.storage.deleteAlarm();
         await this.ctx.storage.deleteAll();
         return json({ ok: true, flushed });
+      }
+      case "/meter": {
+        // Operator diagnostic (GET /hosted/tenants/:id/meter, admin token): what this object's
+        // meter and balance gate hold, and how their last calls to publik went. No secret: the
+        // config is reported as present or missing, the publik address in full (it is public).
+        const tenant = await getTenant(this.env.DB, tenantId);
+        return json({
+          ok: true,
+          build: BUILD,
+          now: now(),
+          config: {
+            endpoint: this.env.PUBLIK_API_BASE ?? null,
+            ingest_token: this.env.INFRA_INGEST_TOKEN ? "set" : "missing",
+            publik_user_id: tenant?.publik_user_id ? "set" : "missing",
+          },
+          next: {
+            poll: (await this.ctx.storage.get<number>(K_NEXT + "poll")) ?? null,
+            usage: (await this.ctx.storage.get<number>(K_NEXT + "usage")) ?? null,
+            alarm: await this.ctx.storage.getAlarm(),
+          },
+          meter: await readMeterState(this.ctx.storage),
+          balance: await readBalanceState(this.ctx.storage),
+        });
       }
       case "/status": {
         const parts = await this.parts(tenantId);
