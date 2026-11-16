@@ -288,7 +288,8 @@ async function mediaResponse(env: HostedEnv, tenant: TenantRow): Promise<Respons
   const client = await clientFor(env, tenant);
   if (!client) return json({ error: "not connected" }, 400);
   try {
-    return json({ media: await client.getMedia(30) });
+    // 30 posts hid an older post that still gets comments (a creator's best post is often old).
+    return json({ media: await client.getMedia(150) });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 502);
   }

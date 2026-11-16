@@ -285,11 +285,21 @@ export class InstagramClient {
 
   /** The connected account's media (for the builder media picker + preview). */
   async getMedia(limit = 25): Promise<IgMedia[]> {
-    const res = await this.get<{ data?: IgMedia[] }>(`/me/media`, {
-      fields: "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count",
-      limit: String(limit),
-    });
-    return res.data ?? [];
+    // The Graph API gives at most 100 posts for one call, so a longer list takes more calls.
+    const out: IgMedia[] = [];
+    let after: string | undefined;
+    while (out.length < limit) {
+      const params: Record<string, string> = {
+        fields: "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count",
+        limit: String(Math.min(100, limit - out.length)),
+      };
+      if (after) params.after = after;
+      const res = await this.get<{ data?: IgMedia[]; paging?: { cursors?: { after?: string }; next?: string } }>(`/me/media`, params);
+      out.push(...(res.data ?? []));
+      after = res.paging?.next ? res.paging?.cursors?.after : undefined;
+      if (!after || (res.data ?? []).length === 0) break;
+    }
+    return out;
   }
 
   /**
