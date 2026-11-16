@@ -15,6 +15,11 @@
 //   no_token     a build with no app token: the first screen must say it
 //                cannot sign in, and the app must not call publik at all.
 //
+// In smoke mode the app uses only the token this script gives it and ignores
+// any token built into it (src/main/main.ts, appToken()). So a release build,
+// which carries the real token, runs all three the same way, and the real
+// token never reaches the fake publik.
+//
 // From outside the app it checks the fake publik's request log: no chatmany
 // call and no usage event before the claim; app_opened (app "chatmany", with
 // the key) after it; and no key in any file the app wrote. Screenshots and
@@ -24,7 +29,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const [exe, outArg] = process.argv.slice(2);
 if (!exe || !existsSync(exe)) {
@@ -38,6 +43,8 @@ const FAKE_TOKEN = `pat_chatmany_${randomBytes(16).toString("hex")}`;
 const FAKE_KEY = `pk_test_${randomBytes(16).toString("hex")}`;
 const CLAIM_CODE = "ABCD-EFGH";
 const RUN_TIMEOUT_MS = 180_000;
+/** The version the app must report: this folder's package.json (0.1.0 for desktop-v0.1.0-rc1). */
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 const results = [];
 const check = (run, name, ok, detail) => {
@@ -91,6 +98,7 @@ function fakePublik() {
 
       if (req.method === "POST" && url.pathname === "/api/v1/installs") {
         const b = parsed() ?? {};
+        // Only "is it the smoke token" is kept: a release build also carries the real token, which must never be sent here.
         entry.install = { app_slug: b.app_slug, app_version: b.app_version, os: b.os, token_ok: b.app_token === FAKE_TOKEN };
         if (b.app_token !== FAKE_TOKEN || b.app_slug !== "chatmany") return json(401, { error: { type: "invalid_app_token", message: "The app token is unknown, wrong, or revoked." } });
         return json(201, { install_id: b.install_id, key: FAKE_KEY, claim_url: `${state.origin}/claim/${CLAIM_CODE}`, claim_code: CLAIM_CODE, claim_state: "anonymous" });
@@ -214,7 +222,9 @@ function noKeyInFiles(run, dir) {
   readResult(run, done.dir);
   noKeyInFiles(run, done.dir);
   const install = log.find((e) => e.path === "/api/v1/installs");
-  check(run, "the app provisioned its install as chatmany 0.1.0", install?.install?.app_slug === "chatmany" && install?.install?.app_version === "0.1.0" && install?.install?.token_ok, install?.install);
+  check(run, `the app provisioned its install as chatmany ${VERSION}`, install?.install?.app_slug === "chatmany" && install?.install?.app_version === VERSION && install?.install?.token_ok, install?.install);
+  const installs = log.filter((e) => e.install);
+  check(run, "every install request carried the smoke test's token, never a token built into the app", installs.length > 0 && installs.every((e) => e.install.token_ok), installs.length);
   const early = log.filter((e) => e.at < state.claimedAt && (e.path.startsWith("/api/v1/chatmany/") || e.path === "/api/v1/telemetry"));
   check(run, "no chatmany call and no usage event before sign-in", early.length === 0, early.length ? early.map((e) => `${e.method} ${e.path}`) : undefined);
   check(run, "the fake claim page was opened (by the smoke test, as the person)", Number.isFinite(state.claimedAt));
@@ -255,7 +265,7 @@ function noKeyInFiles(run, dir) {
 
 const failed = results.filter((r) => !r.ok);
 const lines = [
-  `### chatmany smoke test (${process.platform})`,
+  `### chatmany smoke test (${basename(OUT)}, ${process.platform})`,
   "",
   failed.length === 0 ? `All ${results.length} checks passed.` : `${failed.length} of ${results.length} checks FAILED.`,
   "",

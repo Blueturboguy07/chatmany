@@ -1,0 +1,243 @@
+name: desktop release smoke
+
+# Smoke test of the SIGNED, notarized chatmany files that people download from
+# a GitHub release (desktop-build.yml tests the build it has just made).
+#
+#   macOS, one job per dmg (arm64 natively, x64 under Rosetta):
+#     put a quarantine mark on the dmg, as a browser download does; check it with
+#     Gatekeeper (spctl --assess), its stapled ticket (stapler validate) and
+#     codesign; mount it, copy the app out (still quarantined) and check the app
+#     the same way (desktop/scripts/verify-mac-release.sh); then run the smoke
+#     test (desktop/scripts/smoke.mjs) against that app.
+#   Windows: install the setup exe silently (/S), check the installed app, and
+#     run the same smoke test against it.
+#
+# The release apps carry the real publik app token. In smoke mode the app uses
+# only the smoke test's fake token and talks only to the fake publik on
+# 127.0.0.1 (desktop/src/main/smoke.ts and main.ts). As a guard, each runner
+# also points publikhq.com at itself before the app starts, so no request from
+# these runs can reach the real publik.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag whose files to test"
+        required: true
+        default: desktop-v0.1.0-rc1
+  # A push of this file (or of the scripts it runs) on desktop-app runs it once
+  # with the default tag; that also makes it known to GitHub for dispatch.
+  push:
+    branches: [desktop-app]
+    paths:
+      - ".github/workflows/desktop-release-smoke.yml"
+      - "desktop/scripts/smoke.mjs"
+      - "desktop/scripts/verify-mac-release.sh"
+      - "desktop/scripts/has-app-token.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-smoke-${{ github.ref }}-${{ inputs.tag || 'desktop-v0.1.0-rc1' }}
+  cancel-in-progress: true
+
+env:
+  TAG: ${{ inputs.tag || 'desktop-v0.1.0-rc1' }}
+  DO_NOT_TRACK: "1"
+
+jobs:
+  mac:
+    name: macOS ${{ matrix.arch }} (signed dmg)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download the dmg from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^desktop-v[0-9A-Za-z.-]+$ ]] || { echo "The tag must look like desktop-v0.1.0-rc1."; exit 1; }
+          DL="$RUNNER_TEMP/download"
+          mkdir -p "$DL"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "chatmany-*-mac-$ARCH.dmg" -D "$DL"
+          ls -la "$DL"
+          count=$(find "$DL" -name '*.dmg' | wc -l | tr -d ' ')
+          [ "$count" = 1 ] || { echo "Expected one $ARCH dmg in release $TAG, found $count."; exit 1; }
+          echo "DMG=$(find "$DL" -name '*.dmg')" >>"$GITHUB_ENV"
+          echo "Release \`$TAG\` (mac-$ARCH): runner $(sw_vers -productName) $(sw_vers -productVersion), $(uname -m)." >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Rosetta (x64 only)
+        if: matrix.arch == 'x64'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          arch -x86_64 /usr/bin/true
+          echo "Rosetta is ready on this $(uname -m) runner."
+
+      - name: Gatekeeper, notarization and signature checks (quarantined copy)
+        run: bash scripts/verify-mac-release.sh "$DMG" "$ARCH" "$RUNNER_TEMP/app" "smoke-out/mac-$ARCH"
+
+      - name: Point publikhq.com at this runner (guard against any real publik call)
+        id: guard
+        if: ${{ !cancelled() }}
+        run: |
+          printf '127.0.0.1 publikhq.com\n127.0.0.1 www.publikhq.com\n::1 publikhq.com\n::1 www.publikhq.com\n' | sudo tee -a /etc/hosts >/dev/null
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder || true
+          node -e '
+            require("node:dns").lookup("publikhq.com", { all: true }, (error, list) => {
+              const local = !error && list.length > 0 && list.every((a) => a.address === "127.0.0.1" || a.address === "::1");
+              console.log(error ? error.message : JSON.stringify(list));
+              process.exit(local ? 0 : 1);
+            });'
+
+      - name: Smoke test the signed app (${{ matrix.arch }})
+        if: ${{ !cancelled() && steps.guard.outcome == 'success' }}
+        run: node scripts/smoke.mjs "$RUNNER_TEMP/app/chatmany.app/Contents/MacOS/chatmany" "smoke-out/mac-$ARCH"
+
+      - name: Gatekeeper log of the launches
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        run: |
+          log show --last 30m --style compact \
+            --predicate 'process == "syspolicyd" AND (eventMessage CONTAINS[c] "chatmany" OR eventMessage CONTAINS[c] "publikhq")' \
+            >"smoke-out/mac-$ARCH/gatekeeper-log.txt" 2>&1 || true
+          echo "syspolicyd lines about chatmany: $(grep -c . "smoke-out/mac-$ARCH/gatekeeper-log.txt" || true)"
+          tail -n 25 "smoke-out/mac-$ARCH/gatekeeper-log.txt" || true
+
+      - name: Screen of the runner (only when a step failed)
+        if: failure()
+        timeout-minutes: 2
+        run: screencapture -x "smoke-out/mac-$ARCH/runner-screen.png" || true
+
+      - name: Upload the checks, screenshots and results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-release-smoke-mac-${{ matrix.arch }}
+          path: desktop/smoke-out/
+          if-no-files-found: warn
+
+  windows:
+    name: Windows x64 (release installer)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desktop
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download the installer from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:TAG -notmatch '^desktop-v[0-9A-Za-z.-]+$') { throw "The tag must look like desktop-v0.1.0-rc1." }
+          $dl = Join-Path $env:RUNNER_TEMP "download"
+          New-Item -ItemType Directory -Force -Path $dl | Out-Null
+          gh release download $env:TAG -R $env:GITHUB_REPOSITORY -p "chatmany-*-windows-x64-setup.exe" -D $dl
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed." }
+          $files = @(Get-ChildItem -Path $dl -Filter *.exe)
+          if ($files.Count -ne 1) { throw "Expected one setup exe in release $env:TAG, found $($files.Count)." }
+          "SETUP=$($files[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "Release ``$env:TAG`` (windows-x64): runner $([System.Environment]::OSVersion.VersionString)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Install silently and check the installed app
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = "smoke-out\windows"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $rows = [System.Collections.Generic.List[string]]::new()
+          $state = @{ fails = 0 }
+          function Record([bool]$ok, [string]$name, [string]$detail) {
+            $detail = ($detail -replace "`r?`n", " ") -replace '\|', '\|'
+            if ($ok) { $rows.Add("| $name | pass | $detail |"); Write-Host "PASS $name : $detail" }
+            else { $rows.Add("| $name | **FAIL** | $detail |"); Write-Host "FAIL $name : $detail"; $state.fails++ }
+          }
+          $name = Split-Path $env:SETUP -Leaf
+          $version = $name -replace '^chatmany-(.+)-windows-x64-setup\.exe$', '$1'
+          $sha = (Get-FileHash -Path $env:SETUP -Algorithm SHA256).Hash.ToLower()
+          $sig = Get-AuthenticodeSignature -FilePath $env:SETUP
+
+          $p = Start-Process -FilePath $env:SETUP -ArgumentList "/S" -Wait -PassThru
+          Record ($p.ExitCode -eq 0) "the silent install (/S) ends with exit code 0" "exit $($p.ExitCode)"
+
+          $app = Join-Path $env:LOCALAPPDATA "Programs\chatmany\chatmany.exe"
+          Record (Test-Path $app) "the app is installed for the user in %LOCALAPPDATA%\Programs\chatmany" $app
+          if (-not (Test-Path $app)) {
+            $found = @(Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "Programs"), $env:ProgramFiles -Filter chatmany.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue)
+            if ($found.Count -gt 0) { $app = $found[0].FullName; Write-Host "Found the app at $app instead." }
+          }
+          if (Test-Path $app) {
+            $info = (Get-Item $app).VersionInfo
+            Record ($info.ProductVersion -like "$version*") "the installed app is version $version" "product $($info.ProductVersion), file $($info.FileVersion)"
+            $asar = Join-Path (Split-Path $app) "resources\app.asar"
+            $tokenLine = node scripts/has-app-token.mjs $asar 2>&1 | Out-String
+            Record ($LASTEXITCODE -eq 0) "the app carries its publik app token (value not shown)" $tokenLine.Trim()
+            "APP=$app" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+
+          $report = @(
+            "### Release installer checks (windows-x64)",
+            "",
+            "File ``$name``, sha256 ``$sha``. Authenticode: $($sig.Status) (for information; no Windows signing certificate is set up).",
+            "",
+            $(if ($state.fails -eq 0) { "All $($rows.Count) checks passed." } else { "$($state.fails) of $($rows.Count) checks FAILED." }),
+            "",
+            "| Check | Result | Detail |",
+            "|---|---|---|"
+          ) + $rows + @("")
+          $report | Out-File -FilePath (Join-Path $out "release-checks.md") -Encoding utf8
+          $report | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($state.fails -gt 0) { exit 1 }
+
+      - name: Point publikhq.com at this runner (guard against any real publik call)
+        id: guard
+        if: ${{ !cancelled() }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $hosts = Join-Path $env:windir "System32\drivers\etc\hosts"
+          Add-Content -Path $hosts -Encoding ascii -Value "`r`n127.0.0.1 publikhq.com`r`n127.0.0.1 www.publikhq.com`r`n::1 publikhq.com`r`n::1 www.publikhq.com`r`n"
+          ipconfig /flushdns | Out-Null
+          $addresses = @([System.Net.Dns]::GetHostAddresses("publikhq.com") | ForEach-Object { $_.IPAddressToString })
+          Write-Host "publikhq.com resolves to: $($addresses -join ', ')"
+          $elsewhere = @($addresses | Where-Object { $_ -ne "127.0.0.1" -and $_ -ne "::1" })
+          if ($addresses.Count -eq 0 -or $elsewhere.Count -gt 0) { throw "publikhq.com does not point at this runner." }
+
+      - name: Smoke test the installed app
+        if: ${{ !cancelled() && steps.guard.outcome == 'success' }}
+        run: |
+          if (-not $env:APP) { throw "The install step found no installed app." }
+          node scripts/smoke.mjs $env:APP smoke-out\windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload the checks, screenshots and results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatmany-release-smoke-windows
+          path: desktop/smoke-out/
+          if-no-files-found: warn
