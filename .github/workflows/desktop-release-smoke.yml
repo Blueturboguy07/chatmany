@@ -45,6 +45,8 @@ concurrency:
 env:
   TAG: ${{ inputs.tag || 'desktop-v0.1.0-rc1' }}
   DO_NOT_TRACK: "1"
+  # No update checks from a test launch (desktop/publik-updater.cjs; the smoke mode starts none either).
+  PUBLIK_UPDATES: "0"
 
 jobs:
   mac:

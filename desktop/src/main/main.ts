@@ -1,7 +1,8 @@
-import { BrowserWindow, Menu, app, dialog, ipcMain, nativeTheme, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, Menu, app, dialog, ipcMain, nativeTheme, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from "electron";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { arch, homedir, hostname, platform, tmpdir } from "node:os";
 import { extname, join, normalize, sep } from "node:path";
+import { startUpdates, type PublikUpdates } from "../../publik-updater.cjs";
 import { CHANNELS, allowedApiPath, type GateView } from "../shared/bridge";
 import { ChatmanyClient, NOT_SIGNED_IN } from "./chatmany";
 import { keychainStore } from "./keystore";
@@ -85,6 +86,8 @@ const OS: PublikOs = platform() === "darwin" ? "macos" : platform() === "win32" 
 
 let win: BrowserWindow | null = null;
 let lastConnectUrl: string | null = null;
+/** A test build running the CI update proof (publik-updater.cjs): no window, no publik, nothing else. */
+let updaterTestRun = false;
 /** Smoke test: the pages the app asked the system browser to open, instead of opening them. */
 const opened: string[] = [];
 
@@ -270,6 +273,8 @@ function createWindow(): BrowserWindow {
     minHeight: 560,
     // macOS: no title bar; the page's own header is the drag area, the window buttons sit in it.
     ...(platform() === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 17 } } : {}),
+    // Windows: the only menu is Help › Check for Updates…; it stays hidden until the Alt key shows it.
+    autoHideMenuBar: true,
     show: false,
     backgroundColor: dark ? "#0a0a0a" : "#ffffff",
     webPreferences: {
@@ -303,13 +308,26 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
-function appMenu(): void {
+/** "Check for Updates…" (publik-updater.cjs): macOS in the chatmany menu, Windows in Help (Alt shows it). */
+function appMenu(updates: PublikUpdates | null): void {
   if (platform() !== "darwin") {
-    Menu.setApplicationMenu(null);
+    Menu.setApplicationMenu(updates && platform() === "win32" ? Menu.buildFromTemplate([{ role: "help", submenu: [updates.menuItem()] }]) : null);
     return;
   }
+  const appSubmenu: MenuItemConstructorOptions[] = [
+    { role: "about" },
+    ...(updates ? [{ type: "separator" as const }, updates.menuItem()] : []),
+    { type: "separator" },
+    { role: "services" },
+    { type: "separator" },
+    { role: "hide" },
+    { role: "hideOthers" },
+    { role: "unhide" },
+    { type: "separator" },
+    { role: "quit" },
+  ];
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "viewMenu", submenu: [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }] }, { role: "windowMenu" }]),
+    Menu.buildFromTemplate([{ role: "appMenu", submenu: appSubmenu }, { role: "editMenu" }, { role: "viewMenu", submenu: [{ role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }] }, { role: "windowMenu" }]),
   );
 }
 
@@ -328,15 +346,26 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (!smoke && BrowserWindow.getAllWindows().length === 0) win = createWindow();
+  if (!smoke && !updaterTestRun && BrowserWindow.getAllWindows().length === 0) win = createWindow();
 });
 
 void app.whenReady().then(async () => {
+  // Updates (publik-updater.cjs, docs/updates.md): publik's signed feed for chatmany-mann, checked at
+  // launch, every 24 hours and from "Check for Updates…"; the download runs in the background, then
+  // the app asks to restart. A test build started with PUBLIK_UPDATER_TEST runs the CI update proof and
+  // exits: nothing below starts (no window, no publik, no Instagram). The smoke test checks no updates:
+  // it may talk only to its fake publik.
+  const updates = smoke ? null : startUpdates({ slug: "chatmany-mann", appName: "chatmany", menu: false });
+  if (updates?.testHook) {
+    updaterTestRun = true;
+    return;
+  }
+
   nativeTheme.themeSource = "system";
   serveRenderer();
   lockDownSession();
   registerIpc();
-  appMenu();
+  appMenu(updates);
   win = createWindow();
   void gate.start();
 

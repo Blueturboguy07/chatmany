@@ -1,0 +1,18 @@
+version: '9.9.9-fixture.1'
+publikApp: 'chatmany-mann'
+files:
+  - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-mac-arm64.zip'
+    sha512: 'Lk9Jol+XXZCR11bHCEvcP2z/3O1r9b/U2DvUuKVuhFjA2Y25ZjJ6epDUtcr7wZHuaf6AtV/uY2Cxf7LCPlqY6w=='
+    size: 18
+  - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-mac-x64.zip'
+    sha512: 'hUppRyLtCJZaZeGKGl7Aw8mFPEzMRXm14m6XWRHxOpABsMCUsdnU+pkIDOqONQGu7XrdTjtMe0puanxgd5ykIA=='
+    size: 16
+  - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-mac-arm64.dmg'
+    sha512: 'LjdOAgDj1K6oJITKT9Ec27vWX7WVkrCkrN4voLtWQplEXShJIQwynBO00xMu4YuIUUbDSRAppOY3fDrWHd/hjg=='
+    size: 18
+  - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-mac-x64.dmg'
+    sha512: 'KUrrtHnLonRUoHv0FGzR6uOMSvsQWPSLiwLjEQ46TptM/rCJvMgseR0mBiU+sD0OPl/gXlxPSh7Hw9sNP4xxEQ=='
+    size: 16
+path: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-mac-arm64.zip'
+sha512: 'Lk9Jol+XXZCR11bHCEvcP2z/3O1r9b/U2DvUuKVuhFjA2Y25ZjJ6epDUtcr7wZHuaf6AtV/uY2Cxf7LCPlqY6w=='
+releaseDate: '2026-11-18T00:00:00.000Z'

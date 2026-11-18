@@ -1,0 +1,447 @@
+# Updater proof for the chatmany desktop app (desktop/): on real macOS runners (Apple silicon and Intel)
+# and a real Windows runner, builds two TEST versions of chatmany (N and N+1, both with
+# "publikUpdaterTest": true in package.json, which no release has), installs N, puts N+1 and its signed
+# feed (signed with the real publik update key) on a GitHub PRERELEASE with a test tag
+# (desktop-v0.0.0-updtest.*), and runs .github/scripts/updater-proof.cjs:
+#   - refused feeds (served from 127.0.0.1): one byte of the feed changed, signed by another key, no
+#     signature, an installer with one byte changed, and on macOS N+1 signed by another identity.
+#     For each one, N must refuse and stay N.
+#   - the good feed (the prerelease, absolute asset URLs; on macOS it lists the arm64 AND the x64 zip):
+#     N must verify the signature, download N+1 for its own architecture, check its sha512, install it,
+#     and the installed app must then report N+1. macOS: same bundle ID, designated requirement and
+#     signing authority before and after.
+# The prereleases and their tags are deleted at the end of each job, pass or fail.
+#
+# No account, no Instagram: the test builds carry NO publik app token (PUBLIK_APP_TOKEN is not given to
+# them, and check-build fails if one is there), the app runs only its update test hook (no window, no
+# publik, no Instagram), and each runner points publikhq.com, Instagram and Facebook at 127.0.0.1 before
+# the app starts.
+#
+# macOS: the Developer ID certificate is not in this repo's secrets (the release apps are signed on the
+# maintainer's Mac), so both test builds are signed with a code-signing identity made on the runner, through
+# the signed path of electron-builder.cjs (MAC_SIGN=1: hardened runtime, the app's entitlements). That
+# proves the Squirrel.Mac path (same identity accepted, another refused), not Developer ID signing or
+# notarization.
+#
+# A push to feat/desktop-updater runs it (workflow_dispatch needs the workflow to be known to GitHub).
+name: desktop updater proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feat/desktop-updater']
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-updater-proof.yml'
+      - '.github/scripts/updater-*.cjs'
+
+permissions:
+  contents: write # creates, then deletes, the test prereleases
+
+concurrency:
+  group: desktop-updater-proof-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DO_NOT_TRACK: '1'
+  PUBLIK_UPDATES: '0'
+  ELECTRON_BUILDER_VERSION: '26.18.0'
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  unit:
+    name: Unit tests, typecheck, build (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # Signatures from the reference minisign tool, in both forms the app accepts: legacy (`minisign -S -l`,
+      # Ed25519 over the file) and prehashed (`minisign -S`, Ed25519 over BLAKE2b-512). Checked here with
+      # Node's crypto, then on the macOS and Windows runners with Electron's own crypto.
+      - name: Cross-check with the reference minisign tool
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq minisign > /dev/null
+          minisign -v || true
+          d=minisign-vectors; mkdir -p $d/legacy $d/prehashed
+          minisign -G -W -p $d/minisign.pub -s "$RUNNER_TEMP/minisign.key"
+          for form in legacy prehashed; do cp test/fixtures/update-feed/latest.yml $d/$form/latest.yml; done
+          minisign -S -l -s "$RUNNER_TEMP/minisign.key" -m $d/legacy/latest.yml -x $d/legacy/latest.yml.sig
+          minisign -S -s "$RUNNER_TEMP/minisign.key" -m $d/prehashed/latest.yml -x $d/prehashed/latest.yml.sig
+          rm -f "$RUNNER_TEMP/minisign.key"
+          for form in legacy prehashed; do
+            minisign -V -p $d/minisign.pub -m $d/$form/latest.yml -x $d/$form/latest.yml.sig
+            node scripts/publik-update-feed.cjs verify $d/$form/latest.yml --public-key $d/minisign.pub
+            sed -n 2p $d/$form/latest.yml.sig | base64 -d | head -c 2; echo " <- $form signature algorithm"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minisign-vectors
+          path: desktop/minisign-vectors
+          retention-days: 7
+
+  windows:
+    name: Windows — N updates to N+1 (NSIS, unsigned)
+    needs: unit
+    runs-on: windows-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    env:
+      V_OLD: 0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}.1
+      V_NEW: 0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}.2
+      TAG: desktop-v0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}-win
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: minisign-vectors
+          path: desktop/minisign-vectors
+
+      - name: The signature check under Electron's own crypto (tauri, minisign legacy, minisign prehashed)
+        run: |
+          node -e "require('electron')" > /dev/null # the electron package downloads its binary on first use
+          ELECTRON_RUN_AS_NODE=1 "$(node -p "require('electron')")" ../.github/scripts/updater-electron-crypto.cjs minisign-vectors
+
+      # No PUBLIK_APP_TOKEN here: the test builds cannot sign in to publik.
+      - name: Build N and N+1 (test builds)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          set -euo pipefail
+          npm run build
+          npm pkg set publikUpdaterTest=true --json
+          npm pkg set version="$V_OLD"
+          npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --win --x64 --publish never
+          mv release dist-old
+          npm pkg set version="$V_NEW"
+          npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --win --x64 --publish never
+          mv release dist-new
+          ls -la dist-old dist-new
+
+      - name: Check the test builds (updater inside, no app token)
+        run: |
+          set -euo pipefail
+          node ../.github/scripts/updater-proof.cjs check-build --asar dist-old/win-unpacked/resources/app.asar --version "$V_OLD"
+          node ../.github/scripts/updater-proof.cjs check-build --asar dist-new/win-unpacked/resources/app.asar --version "$V_NEW"
+          if node scripts/has-app-token.mjs dist-old/win-unpacked/resources/app.asar; then echo "the test build carries an app token"; exit 1; fi
+
+      - name: Install N with its own installer
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist-old/*-setup.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited $($p.ExitCode)" }
+          Get-Process chatmany -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\chatmany\chatmany.exe'
+          if (!(Test-Path $exe)) { throw "installed chatmany.exe not found at $exe" }
+          "CHATMANY_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Point publik, Instagram and Facebook at this runner (no real service is reachable)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $names = 'publikhq.com','www.publikhq.com','instagram.com','www.instagram.com','i.instagram.com','api.instagram.com','graph.instagram.com','facebook.com','www.facebook.com','m.facebook.com','graph.facebook.com'
+          $hosts = Join-Path $env:windir "System32\drivers\etc\hosts"
+          Add-Content -Path $hosts -Encoding ascii -Value ("`r`n" + (($names | ForEach-Object { "127.0.0.1 $_`r`n::1 $_" }) -join "`r`n") + "`r`n")
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @([System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.IPAddressToString })
+            if ($a.Count -eq 0 -or @($a | Where-Object { $_ -ne '127.0.0.1' -and $_ -ne '::1' }).Count -gt 0) { throw "$n resolves to $($a -join ', ')" }
+          }
+          Write-Host "publik, Instagram and Facebook resolve to this runner."
+
+      - name: Put N+1 on a test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
+            --title "Updater proof $TAG (test build, deleted after the run)" \
+            --notes "CI test of the chatmany desktop self-updater (desktop-updater-proof.yml). Not a release. Deleted when the run ends." \
+            "dist-new/chatmany-$V_NEW-windows-x64-setup.exe"
+
+      # The same command desktop-update-feed.yml runs for a real release: reads the release, writes
+      # latest.yml with absolute asset URLs, signs it with the real update key, verifies it, uploads it.
+      - name: Make the signed feed with the release script (real update key)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIK_UPDATE_KEY: ${{ secrets.PUBLIK_UPDATE_KEY }}
+          PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany-mann --repo "$GITHUB_REPOSITORY"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.yml --pattern latest.yml.sig --dir feed-good
+          node scripts/publik-update-feed.cjs verify feed-good/latest.yml
+          cat feed-good/latest.yml
+
+      - name: Make the refused feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIK_UPDATE_KEY: ${{ secrets.PUBLIK_UPDATE_KEY }}
+          PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/"
+          exe="chatmany-$V_NEW-windows-x64-setup.exe"
+          onebyte="chatmany-$V_NEW-windows-x64-setup-onebyte.exe"
+          mkdir -p assets
+          node ../.github/scripts/updater-proof.cjs one-byte --src "dist-new/$exe" --dst "assets/$onebyte"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "assets/$onebyte"
+          node ../.github/scripts/updater-proof.cjs prepare --good feed-good --feed latest.yml --onebyte-of "$exe" --onebyte-url "$base$onebyte" --out cases
+
+      - name: Proof (N refuses the bad feeds, then updates to N+1)
+        timeout-minutes: 30
+        run: |
+          node ../.github/scripts/updater-proof.cjs run --app "$CHATMANY_EXE" --old "$V_OLD" --new "$V_NEW" \
+            --good-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/" \
+            --cases cases --out proof-logs/updater-proof-windows.json --logs proof-logs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: updater-proof-windows
+          path: |
+            desktop/proof-logs
+            desktop/feed-good/latest.yml
+            desktop/cases
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete the test prerelease and its tag
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1 || true
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "release $TAG still exists"; exit 1; fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1; then echo "tag $TAG still exists"; exit 1; fi
+          echo "deleted $TAG"
+
+  macos:
+    name: macOS ${{ matrix.arch }} — N updates to N+1 (Squirrel.Mac, runner-made identity)
+    needs: unit
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-15-intel
+    env:
+      ARCH: ${{ matrix.arch }}
+      V_OLD: 0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}.1
+      V_NEW: 0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}.2
+      TAG: desktop-v0.0.0-updtest.${{ github.run_number }}.${{ github.run_attempt }}-mac-${{ matrix.arch }}
+      SIGN_ID: chatmany Update Test
+      OTHER_ID: chatmany Other Identity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: minisign-vectors
+          path: desktop/minisign-vectors
+
+      - name: The signature check under Electron's own crypto (tauri, minisign legacy, minisign prehashed)
+        run: |
+          node -e "require('electron')" > /dev/null # the electron package downloads its binary on first use
+          ELECTRON_RUN_AS_NODE=1 "$(node -p "require('electron')")" ../.github/scripts/updater-electron-crypto.cjs minisign-vectors
+
+      # Two self-signed code-signing identities in a keychain of this run, trusted for code signing on
+      # this runner only. SIGN_ID signs N and N+1; OTHER_ID re-signs a copy of N+1 for the refused case.
+      - name: Make two code-signing identities (this runner only)
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/updtest.keychain-db"
+          KCPASS="$(/usr/bin/openssl rand -hex 16)"
+          P12PASS="$(/usr/bin/openssl rand -hex 16)"
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          for name in "$SIGN_ID" "$OTHER_ID"; do
+            d="$RUNNER_TEMP/id-$(echo "$name" | tr ' ' '-')"; mkdir -p "$d"
+            printf '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=%s\n[ext]\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n' "$name" > "$d/req.cnf"
+            /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config "$d/req.cnf" -keyout "$d/key.pem" -out "$d/cert.pem" 2>/dev/null
+            /usr/bin/openssl pkcs12 -export -inkey "$d/key.pem" -in "$d/cert.pem" -name "$name" -out "$d/id.p12" -passout "pass:$P12PASS"
+            security import "$d/id.p12" -k "$KC" -P "$P12PASS" -T /usr/bin/codesign >/dev/null
+            sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$d/cert.pem"
+            rm -f "$d/key.pem" "$d/id.p12"
+          done
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          security find-identity -v -p codesigning "$KC"
+          echo "KC=$KC" >> "$GITHUB_ENV"
+
+      # The signed path of electron-builder.cjs (MAC_SIGN=1: hardened runtime + the app's entitlements),
+      # with the runner identity (CSC_NAME) and no notarization (no Apple secrets). N: this runner's
+      # architecture. N+1: both architectures, so the feed lists both, as a real release's does.
+      # No PUBLIK_APP_TOKEN here: the test builds cannot sign in to publik.
+      - name: Build N and N+1 (test builds, zips, signed with SIGN_ID)
+        env:
+          MAC_SIGN: '1'
+          CSC_NAME: ${{ env.SIGN_ID }}
+        run: |
+          set -euo pipefail
+          npm run build
+          npm pkg set publikUpdaterTest=true --json
+          npm pkg set version="$V_OLD"
+          npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --mac zip "--$ARCH" --publish never
+          mv release dist-old
+          npm pkg set version="$V_NEW"
+          npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --mac zip --arm64 --x64 --publish never
+          mv release dist-new
+          ls -la dist-old dist-new
+          if [ "$ARCH" = arm64 ]; then echo "APP_DIR=mac-arm64" >> "$GITHUB_ENV"; else echo "APP_DIR=mac" >> "$GITHUB_ENV"; fi
+
+      - name: Check the test builds (updater inside, no app token, signature)
+        run: |
+          set -euo pipefail
+          for v in old new; do
+            dir="dist-$v/$APP_DIR"; version=$([ "$v" = old ] && echo "$V_OLD" || echo "$V_NEW")
+            node ../.github/scripts/updater-proof.cjs check-build --asar "$dir/chatmany.app/Contents/Resources/app.asar" --version "$version"
+          done
+          if node scripts/has-app-token.mjs "dist-old/$APP_DIR/chatmany.app/Contents/Resources/app.asar"; then echo "the test build carries an app token"; exit 1; fi
+          app="dist-old/$APP_DIR/chatmany.app"
+          lipo -archs "$app/Contents/MacOS/chatmany"
+          codesign -dvv "$app" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier|Runtime|CodeDirectory)'
+          codesign -d -r- "$app" 2>&1 | grep designated
+          codesign --verify --deep --strict "$app" && echo "codesign: valid"
+
+      - name: Install N (unzip into ~/Applications, as a user would)
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/Applications"
+          rm -rf "$HOME/Applications/chatmany.app"
+          ditto -x -k "dist-old/chatmany-$V_OLD-mac-$ARCH.zip" "$HOME/Applications/"
+          echo "CHATMANY_APP=$HOME/Applications/chatmany.app" >> "$GITHUB_ENV"
+
+      - name: Point publik, Instagram and Facebook at this runner (no real service is reachable)
+        run: |
+          set -euo pipefail
+          names="publikhq.com www.publikhq.com instagram.com www.instagram.com i.instagram.com api.instagram.com graph.instagram.com facebook.com www.facebook.com m.facebook.com graph.facebook.com"
+          for n in $names; do printf '127.0.0.1 %s\n::1 %s\n' "$n" "$n"; done | sudo tee -a /etc/hosts >/dev/null
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder || true
+          sleep 2
+          for n in $names; do
+            node -e '
+              require("node:dns").lookup(process.argv[1], { all: true }, (e, list) => {
+                const local = !e && list.length > 0 && list.every((a) => a.address === "127.0.0.1" || a.address === "::1");
+                if (!local) { console.log(process.argv[1], e ? e.message : JSON.stringify(list)); process.exit(1); }
+              });' "$n"
+          done
+          echo "publik, Instagram and Facebook resolve to this runner."
+
+      - name: Put N+1 on a test prerelease (both architectures)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            --title "Updater proof $TAG (test build, deleted after the run)" \
+            --notes "CI test of the chatmany desktop self-updater (desktop-updater-proof.yml). Not a release. Deleted when the run ends." \
+            "dist-new/chatmany-$V_NEW-mac-arm64.zip" "dist-new/chatmany-$V_NEW-mac-x64.zip"
+
+      # The same command desktop-update-feed.yml runs for a real release (see the Windows job).
+      - name: Make the signed feed with the release script (real update key)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIK_UPDATE_KEY: ${{ secrets.PUBLIK_UPDATE_KEY }}
+          PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany-mann --repo "$GITHUB_REPOSITORY"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest-mac.yml --pattern latest-mac.yml.sig --dir feed-good
+          node scripts/publik-update-feed.cjs verify feed-good/latest-mac.yml
+          cat feed-good/latest-mac.yml
+          grep -c "url: 'https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/chatmany-$V_NEW-mac-arm64.zip'" feed-good/latest-mac.yml
+          grep -c "url: 'https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/chatmany-$V_NEW-mac-x64.zip'" feed-good/latest-mac.yml
+
+      - name: Make the refused feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIK_UPDATE_KEY: ${{ secrets.PUBLIK_UPDATE_KEY }}
+          PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/"
+          zipname="chatmany-$V_NEW-mac-$ARCH.zip"
+          zip="dist-new/$zipname"
+          mkdir -p assets other
+          onebyte="chatmany-$V_NEW-mac-$ARCH-onebyte.zip"
+          node ../.github/scripts/updater-proof.cjs one-byte --src "$zip" --dst "assets/$onebyte"
+          # N+1 re-signed with OTHER_ID: same bundle, same version, another code-signing identity
+          ditto -x -k "$zip" other/
+          codesign --force --deep --options runtime --timestamp=none --entitlements build-resources/entitlements.mac.plist --keychain "$KC" --sign "$OTHER_ID" other/chatmany.app
+          codesign --verify --deep --strict other/chatmany.app && codesign -dvv other/chatmany.app 2>&1 | grep -E '^Authority'
+          otherzip="assets/chatmany-$V_NEW-mac-$ARCH-otheridentity.zip"
+          ditto -c -k --sequesterRsrc --keepParent other/chatmany.app "$otherzip"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "assets/$onebyte" "$otherzip"
+          node scripts/publik-update-feed.cjs write --app chatmany-mann --version "$V_NEW" --download-base "$base" --mac-zip "$otherzip" --out feed-otherid
+          node ../.github/scripts/updater-proof.cjs prepare --good feed-good --feed latest-mac.yml --onebyte-of "$zipname" --onebyte-url "$base$onebyte" --other-identity feed-otherid --out cases
+
+      - name: Proof (N refuses the bad feeds, then updates to N+1)
+        timeout-minutes: 40
+        run: |
+          node ../.github/scripts/updater-proof.cjs run --app "$CHATMANY_APP/Contents/MacOS/chatmany" --bundle "$CHATMANY_APP" --arch "$ARCH" \
+            --old "$V_OLD" --new "$V_NEW" --good-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/" \
+            --cases cases --out "proof-logs/updater-proof-macos-$ARCH.json" --logs proof-logs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: updater-proof-macos-${{ matrix.arch }}
+          path: |
+            desktop/proof-logs
+            desktop/feed-good/latest-mac.yml
+            desktop/cases
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete the test prerelease and its tag
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1 || true
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "release $TAG still exists"; exit 1; fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1; then echo "tag $TAG still exists"; exit 1; fi
+          echo "deleted $TAG"
+
+      - name: Remove the keychain of this run
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/updtest.keychain-db" || true

@@ -1,0 +1,9 @@
+version: '9.9.9-fixture.1'
+publikApp: 'chatmany-mann'
+files:
+  - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-windows-x64-setup.exe'
+    sha512: 'lATFaLr8kHVC56qNMZ0VRACxq2dKQce19eXnfx3cqyCnf9pVw3THIwK/VrbSRf2yV6g8+FHHNNq/7LavHPeVFg=='
+    size: 26
+path: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v9.9.9-fixture.1/chatmany-9.9.9-fixture.1-windows-x64-setup.exe'
+sha512: 'lATFaLr8kHVC56qNMZ0VRACxq2dKQce19eXnfx3cqyCnf9pVw3THIwK/VrbSRf2yV6g8+FHHNNq/7LavHPeVFg=='
+releaseDate: '2026-11-18T00:00:00.000Z'

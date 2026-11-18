@@ -1,8 +1,9 @@
 name: desktop build
 
 # Builds the chatmany desktop app (desktop/): unit tests and typecheck, then a
-# macOS dmg (arm64 and x64) and a Windows installer (x64), then a smoke test of
-# each BUILT app on its runner (desktop/scripts/smoke.mjs), with screenshots.
+# macOS dmg and zip (arm64 and x64; the zip is what an update installs from) and
+# a Windows installer (x64), then a smoke test of each BUILT app on its runner
+# (desktop/scripts/smoke.mjs), with screenshots.
 #
 # Optional repository secrets (none is required; the job summary says which ones were there):
 #   CSC_LINK, CSC_KEY_PASSWORD                         Developer ID Application certificate (.p12, base64) and its password
@@ -29,6 +30,8 @@ concurrency:
 env:
   # A build machine is not a user: no usage counting from CI (the smoke test turns it on for its fake publik only).
   DO_NOT_TRACK: "1"
+  # Nor update checks (desktop/publik-updater.cjs; the smoke mode starts none either).
+  PUBLIK_UPDATES: "0"
   ELECTRON_BUILDER_VERSION: "26.18.0"
   # electron-builder downloads the Electron it packages; the npm package's own copy is not needed.
   ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
@@ -55,7 +58,7 @@ jobs:
       - run: npm run build
 
   mac:
-    name: macOS dmg (arm64 + x64)
+    name: macOS dmg and zip (arm64 + x64)
     needs: check
     runs-on: macos-latest
     timeout-minutes: 75
@@ -114,7 +117,7 @@ jobs:
 
       - run: npm run build
 
-      - name: Build the dmgs
+      - name: Build the dmgs and zips
         env:
           PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -176,11 +179,13 @@ jobs:
           hdiutil detach "$MNT"
           node scripts/smoke.mjs "$RUNNER_TEMP/x64/chatmany.app/Contents/MacOS/chatmany" smoke-out/mac-x64
 
-      - name: Upload the dmgs
+      - name: Upload the dmgs and zips
         uses: actions/upload-artifact@v4
         with:
           name: chatmany-mac-dmg
-          path: desktop/release/*.dmg
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
           if-no-files-found: error
 
       - name: Upload the smoke test screenshots and results
@@ -208,7 +213,7 @@ jobs:
             echo "- x64 smoke test: ${SMOKE_X64:-not run}"
             echo ""
             echo "Files:"
-            ls -la release/*.dmg 2>/dev/null | awk '{print "- " $NF " (" $5 " bytes)"}'
+            ls -la release/*.dmg release/*.zip 2>/dev/null | awk '{print "- " $NF " (" $5 " bytes)"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
   windows:
