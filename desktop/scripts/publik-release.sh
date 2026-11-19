@@ -261,7 +261,11 @@ if [ -z "$RELEASE_ID" ]; then
     echo "chatmany 0.1.2 and later install this version themselves (they ask before they restart). chatmany 0.1.1 and older: download it one time by hand."
   } > "$NOTES"
   gh release create "$TAG" -R "$REPO" --draft --target "$SHA" --title "chatmany desktop $VERSION" --notes-file "$NOTES" > /dev/null || true
-  RELEASE_ID="$(ghr api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" || true)"
+  for i in 1 2 3 4; do # the list can lag a few seconds behind the create call
+    RELEASE_ID="$(ghr api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" || true)"
+    [ -n "$RELEASE_ID" ] && break
+    sleep 20
+  done
   [ -n "$RELEASE_ID" ] || die "the draft $TAG was not created"
   ok "draft $TAG created (release $RELEASE_ID, target $SHA)"
 else
