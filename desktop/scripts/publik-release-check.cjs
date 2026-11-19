@@ -15,6 +15,10 @@
 //   exe <file> --version X.Y.Z             the Windows installer's ProductVersion / FileVersion is X.Y.Z(.0)
 //   token <app.asar>                       "pat_<slug>_ sha256:<16 hex> length:<n>" of the packed app token
 //                                          (package.json publik.appToken): a fingerprint, never the token
+//   win-token <app.asar> <installer> --out <file>
+//                                          CI: writes { installer, sha256, token } (the installer's name and
+//                                          sha256, the fingerprint of the token in the app it packs)
+//   macho <dir>                            every Mach-O file under <dir>, deepest first: "exec|lib<TAB>path"
 'use strict';
 
 const fs = require('node:fs');
@@ -173,12 +177,57 @@ function asarFile(asar, inner) {
   }
 }
 
-function token(asar) {
+function fingerprint(asar) {
   const pkg = JSON.parse(asarFile(asar, 'package.json').toString('utf8'));
   const t = pkg.publik && typeof pkg.publik.appToken === 'string' ? pkg.publik.appToken.trim() : '';
   const m = /^pat_([a-z0-9-]+)_[a-z0-9]{32}$/.exec(t);
-  console.log(`${m ? `pat_${m[1]}_` : 'NO-TOKEN'} sha256:${crypto.createHash('sha256').update(t).digest('hex').slice(0, 16)} length:${t.length}`);
   if (!m) fails++;
+  return `${m ? `pat_${m[1]}_` : 'NO-TOKEN'} sha256:${crypto.createHash('sha256').update(t).digest('hex').slice(0, 16)} length:${t.length}`;
+}
+function token(asar) {
+  console.log(fingerprint(asar));
+}
+function winToken(asar, installer, o) {
+  if (!o.out) die('win-token needs --out <file>');
+  const r = { installer: path.basename(installer), sha256: hashes(installer).sha256, token: fingerprint(asar) };
+  fs.writeFileSync(o.out, `${JSON.stringify(r)}\n`);
+  console.log(JSON.stringify(r));
+}
+
+function machoKind(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const head = Buffer.alloc(32);
+    if (fs.readSync(fd, head, 0, 32, 0) < 16) return null;
+    const le = head.readUInt32LE(0);
+    const be = head.readUInt32BE(0);
+    if (le === 0xfeedfacf || le === 0xfeedface) return head.readUInt32LE(12) === 2 ? 'exec' : 'lib';
+    if (be === 0xcafebabe || be === 0xcafebabf) { // fat: the file type of the first slice
+      const n = head.readUInt32BE(4);
+      if (!(n > 0 && n < 10)) return null; // a Java class file has the same magic
+      const off = be === 0xcafebabe ? head.readUInt32BE(16) : Number(head.readBigUInt64BE(16));
+      const sub = Buffer.alloc(16);
+      fs.readSync(fd, sub, 0, 16, off);
+      return sub.readUInt32LE(12) === 2 ? 'exec' : 'lib';
+    }
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+function macho(dir) {
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) { const k = machoKind(p); if (k) out.push([p.split('/').length, k, p]); }
+    }
+  };
+  walk(dir);
+  out.sort((a, b) => b[0] - a[0] || (a[2] < b[2] ? -1 : 1));
+  for (const [, k, p] of out) console.log(`${k}\t${p}`);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -189,5 +238,7 @@ else if (cmd === 'feed') feed(o._[0], o);
 else if (cmd === 'match') match(o._[0], o._[1]);
 else if (cmd === 'exe') exe(o._[0], o);
 else if (cmd === 'token') token(o._[0]);
-else die('usage: publik-release-check.cjs record|write-feed|feed|match|exe|token ... (see the top of this file)');
+else if (cmd === 'win-token') winToken(o._[0], o._[1], o);
+else if (cmd === 'macho') macho(o._[0]);
+else die('usage: publik-release-check.cjs record|write-feed|feed|match|exe|token|win-token|macho ... (see the top of this file)');
 process.exit(fails ? 1 : 0);

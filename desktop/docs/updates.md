@@ -80,32 +80,30 @@ The `.sig` file is a minisign signature of the feed file (`tauri signer sign`, `
 
 ## Cut a release with updates
 
-1. Set the new version in `package.json` (and `APP_VERSION` in `src/main/publik.ts`, `version` in
-   `src/preload/preload.ts`; a test checks that they agree). Commit and push to `desktop-app`.
-2. Take the Windows installer from the `desktop-build.yml` run (artifact `chatmany-windows-exe`).
-3. Sign, notarize and staple both mac apps as today. Make each zip FROM THE STAPLED APP:
-   `ditto -c -k --sequesterRsrc --keepParent chatmany.app chatmany-<version>-mac-arm64.zip` (and `-mac-x64`).
-   Make the dmgs as today.
-4. Put the exe, both dmgs and both zips on the release (a draft is fine). Do NOT upload the `latest*.yml` or
-   `.blockmap` files that electron-builder writes into `release/`: they are not signed.
-5. Make the feed: **Actions › desktop update feed** with the tag (or
-   `gh workflow run desktop-update-feed.yml --ref desktop-app -f tag=desktop-vX.Y.Z`; add
-   `-f version=X.Y.Z` when the tag says more, as in `desktop-v0.1.2-rc1`). It adds `latest.yml`,
-   `latest-mac.yml` and their `.sig` files. It adds only missing feed files; use **force** after you
-   replace an installer file. It refuses a dmg that has no zip of the same architecture.
-6. Check that the release holds the four feed files.
-
-For a publik release (a draft that publik scans): run step 5 for the draft BEFORE the scan, so the scan sees
-the feed files too.
-
-Without CI, run the same script on a Mac that has the key in its keychain:
+One command, on the maintainer's Mac (it holds the Developer ID certificate, the notarytool profile `publik`
+and the publik update key in its keychain):
 
 ```sh
-cd desktop
-PUBLIK_UPDATE_KEY="$(security find-generic-password -s publik-update-key -a mann-private -w)" \
-PUBLIK_UPDATE_KEY_PASSWORD="$(security find-generic-password -s publik-update-key -a mann-password -w)" \
-node scripts/publik-update-feed.cjs release --tag desktop-vX.Y.Z --app chatmany-mann --repo Blueturboguy07/chatmany
+git checkout desktop-app
+desktop/scripts/publik-release.sh X.Y.Z --notes-file notes.md
 ```
+
+`notes.md` holds the lines that say what is new. The script does every step and stops at the first failed check
+(the release then stays a draft; run the same command again to resume):
+
+1. Sets the version (`package.json`, `package-lock.json`, `APP_VERSION` in `src/main/publik.ts`, `version` in
+   `src/preload/preload.ts`), commits and pushes to `desktop-app`.
+2. Waits for `desktop-build.yml` on that commit (tests, both mac apps, the Windows installer, smoke tests).
+3. Makes a draft release `desktop-vX.Y.Z`.
+4. Signs each mac app with the Developer ID, notarizes it, staples it, makes the update zip from the stapled app
+   and the dmg (signed, notarized, stapled).
+5. Takes the Windows installer of the same CI run and checks it against CI's record of the publik app token.
+6. Writes `latest.yml` and `latest-mac.yml` and signs them with the update key from the keychain.
+7. Downloads every file back from the draft and checks it (signatures, hashes, versions, Gatekeeper, the app token).
+8. Publishes the release. publik takes it in at its next daily intake (10:00 UTC).
+
+`--no-publish` stops after step 7. `.github/workflows/desktop-update-feed.yml` stays as a repair tool: it makes
+the feed files of an existing release again (`-f tag=desktop-vX.Y.Z`, **force** after a file was replaced).
 
 Note: apps of version 0.1.1 and older have no updater. Their users must install the first version with the
 updater by hand; updates work from that version on.

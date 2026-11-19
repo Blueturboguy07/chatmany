@@ -247,6 +247,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx --yes "electron-builder@${ELECTRON_BUILDER_VERSION}" --config electron-builder.cjs --win --x64 --publish never
 
+      # desktop/scripts/publik-release.sh checks the installer it releases against this record.
+      - name: Record the publik app token of the installer (a fingerprint, never the token)
+        if: steps.secrets.outputs.token == 'true'
+        shell: bash
+        run: node scripts/publik-release-check.cjs win-token release/win-unpacked/resources/app.asar release/chatmany-*-windows-x64-setup.exe --out release/chatmany-windows-x64-token.json
+
       - name: Smoke test (the installed app)
         shell: pwsh
         run: |
@@ -266,7 +272,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: chatmany-windows-exe
-          path: desktop/release/*.exe
+          path: |
+            desktop/release/*.exe
+            desktop/release/chatmany-windows-x64-token.json
           if-no-files-found: error
 
       - name: Upload the smoke test screenshots and results
