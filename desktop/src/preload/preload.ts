@@ -29,7 +29,7 @@ const bridge: ChatmanyBridge = {
     exportCsv: (campaignId) => ipcRenderer.invoke("workspace:export-csv", campaignId),
   },
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
-  info: { version: "0.1.2", platform: process.platform },
+  info: { version: "0.1.3", platform: process.platform },
 };
 
 contextBridge.exposeInMainWorld("chatmany", bridge);
