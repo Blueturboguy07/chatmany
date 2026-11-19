@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GateView } from "../src/shared/bridge";
 import { OFFLINE_TEXT, UNREACHABLE_TEXT } from "../src/shared/messages";
-import { NO_TOKEN_TEXT, POLL_LIMIT_MS, POLL_MS, PublikGate, SIGN_IN_TIMEOUT, SIGN_IN_WAITING, type InstallStore, type StoredInstall } from "../src/main/publik";
+import { APP_VERSION, NO_TOKEN_TEXT, POLL_LIMIT_MS, POLL_MS, PublikGate, SIGN_IN_TIMEOUT, SIGN_IN_WAITING, type InstallStore, type StoredInstall } from "../src/main/publik";
 
 const ORIGIN = "https://publikhq.com";
 const TOKEN = `pat_chatmany_${"a1".repeat(16)}`;
@@ -66,7 +66,7 @@ describe("the sign-in gate", () => {
     await h.gate.start();
     expect(h.gate.current()).toEqual({ screen: "sign_in", note: null, waiting: false });
     const mint = h.calls.find((c) => c.path === "/api/v1/installs")!;
-    expect(mint.body).toMatchObject({ app_token: TOKEN, app_slug: "chatmany", app_version: "0.1.2", os: "macos", arch: "arm64", disclosure_version: 1 });
+    expect(mint.body).toMatchObject({ app_token: TOKEN, app_slug: "chatmany", app_version: APP_VERSION, os: "macos", arch: "arm64", disclosure_version: 1 });
     expect(h.stored()?.key).toBe(KEY);
     // No key for anything else while the install is not signed in.
     expect(h.gate.signedInKey()).toBeNull();
@@ -93,7 +93,7 @@ describe("the sign-in gate", () => {
     expect(h.gate.signedInKey()).toBe(KEY);
     const event = h.calls.find((c) => c.path === "/api/v1/telemetry")!;
     expect(event.auth).toBe(`Bearer ${KEY}`);
-    expect(event.body).toMatchObject({ v: 1, app: "chatmany", event: "app_opened", app_version: "0.1.2", os: "macos" });
+    expect(event.body).toMatchObject({ v: 1, app: "chatmany", event: "app_opened", app_version: APP_VERSION, os: "macos" });
   });
 
   it("stops asking after 10 minutes and says so", async () => {

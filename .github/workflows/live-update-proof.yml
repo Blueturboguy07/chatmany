@@ -1,0 +1,157 @@
+# Live update proof of the chatmany desktop app: a user's chatmany updating itself from the LIVE publik feed,
+# on real runners. For each OS chatmany ships (macOS Apple silicon: the arm64 dmg; macOS Intel: the x64 dmg;
+# Windows x64: the setup exe), the job downloads the published release `from_tag` from GitHub, installs it as
+# a user does, starts it the normal way (release build: no test hook, no feed override, nobody signs in) and
+# lets it ask https://publikhq.com/api/updates/chatmany-mann/. Then (.github/scripts/live-update-proof.cjs):
+#   expect_version = the from version: the app must find no update and stay as it is. The live feed may
+#     answer 404 (publik serves no release of chatmany-mann yet: the release waits for the owner's approval):
+#     the app reads that as "no update" and shows nothing; the proof accepts it and says so in its log.
+#   expect_version = a newer version: the live feed must serve it; the app must download it, ask
+#     "Restart now?", and after the answer ("restart": Restart Now; "later": Later, then the user quits and
+#     opens the app) run expect_version.
+# macOS also gets REAL TCC grants (camera, microphone, screen capture, accessibility) bound to the app's
+# designated requirement before the update, and checks after it that each stored requirement is still
+# satisfied (the check tccd makes; a runner cannot show a consent prompt). Each job clicks
+# "Check for Updates…" through the UI and reads the answer. Logs, UI dumps and screenshots: the artifacts.
+# A failed check fails the job. Run it by hand: Actions › desktop live update proof, or
+#   gh workflow run live-update-proof.yml --ref desktop-app -f from_tag=desktop-v0.1.2-rc1 -f expect_version=0.1.3
+# A push of this file or its scripts runs only a self-check (syntax), which also makes the workflow known
+# to GitHub on this branch. The signature refusal proof stays in desktop-updater-proof.yml.
+name: desktop live update proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: The published release to install first (N), e.g. desktop-v0.1.2-rc1
+        required: true
+        type: string
+        default: desktop-v0.1.2-rc1
+      expect_version:
+        description: The version the app must run at the end (N+1 for an update, N for "no update"), e.g. 0.1.3
+        required: true
+        type: string
+  push:
+    branches: [desktop-app, desktop-live-proof]
+    paths:
+      - .github/workflows/live-update-proof.yml
+      - .github/scripts/live-update-proof.cjs
+      - .github/scripts/live-proof-root.sh
+      - .github/scripts/live-proof-win.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-update-proof-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  self-check:
+    name: Self-check (syntax)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node --check .github/scripts/live-update-proof.cjs
+      - run: bash -n .github/scripts/live-proof-root.sh
+      - shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/.github/scripts/live-proof-win.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
+          Write-Host "live-proof-win.ps1 parses"
+
+  macos:
+    name: macOS ${{ matrix.arch }} (${{ matrix.answer }})
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-latest, arch: arm64, answer: restart }
+          - { runner: macos-latest, arch: arm64, answer: later }
+          - { runner: macos-15-intel, arch: x64, answer: restart }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Runner
+        run: sw_vers; uname -m; spctl --status || true; csrutil status || true
+      - name: The runner is the architecture of the dmg
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          node -e 'if (process.arch !== process.env.ARCH) { console.error(`node runs as ${process.arch}, the job tests ${process.env.ARCH}`); process.exit(1); } console.log(`node ${process.arch}`)'
+      - name: Live update proof
+        env:
+          FROM_TAG: ${{ inputs.from_tag }}
+          EXPECT: ${{ inputs.expect_version }}
+          ANSWER: ${{ matrix.answer }}
+        run: node .github/scripts/live-update-proof.cjs --from-tag "$FROM_TAG" --expect "$EXPECT" --answer "$ANSWER" --repo "$GITHUB_REPOSITORY" --out live-proof
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f live-proof/summary.json ]; then
+            node -e '
+              const s = require("./live-proof/summary.json");
+              const out = [`### macOS ${s.arch} (${s.answer}): ${s.pass ? "PASS" : "FAIL"}`, "", `from ${s.fromTag} (${s.from}), expect ${s.expect}; live feed ${s.feedUrl}: ${s.liveFeedState}; menu item: ${s.menuItem || "-"}`, ""];
+              for (const c of s.checks) out.push(`- ${c.pass ? "PASS" : "**FAIL**"} ${c.name}`);
+              for (const n of s.notes) out.push(`- note: ${n}`);
+              require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
+            '
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-update-proof-macos-${{ matrix.arch }}-${{ matrix.answer }}
+          path: live-proof
+          if-no-files-found: warn
+          retention-days: 30
+
+  windows:
+    name: Windows x64 (${{ matrix.answer }})
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        answer: [restart, later]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Live update proof
+        env:
+          FROM_TAG: ${{ inputs.from_tag }}
+          EXPECT: ${{ inputs.expect_version }}
+          ANSWER: ${{ matrix.answer }}
+        run: node .github/scripts/live-update-proof.cjs --from-tag "$FROM_TAG" --expect "$EXPECT" --answer "$ANSWER" --repo "$GITHUB_REPOSITORY" --out live-proof
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f live-proof/summary.json ]; then
+            node -e '
+              const s = require("./live-proof/summary.json");
+              const out = [`### Windows x64 (${s.answer}): ${s.pass ? "PASS" : "FAIL"}`, "", `from ${s.fromTag} (${s.from}), expect ${s.expect}; live feed ${s.feedUrl}: ${s.liveFeedState}; menu item: ${s.menuItem || "-"}`, ""];
+              for (const c of s.checks) out.push(`- ${c.pass ? "PASS" : "**FAIL**"} ${c.name}`);
+              for (const n of s.notes) out.push(`- note: ${n}`);
+              require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
+            '
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-update-proof-windows-${{ matrix.answer }}
+          path: live-proof
+          if-no-files-found: warn
+          retention-days: 30
