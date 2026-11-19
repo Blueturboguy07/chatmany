@@ -23,17 +23,11 @@
 # proves the Squirrel.Mac path (same identity accepted, another refused), not Developer ID signing or
 # notarization.
 #
-# A push to feat/desktop-updater runs it (workflow_dispatch needs the workflow to be known to GitHub).
+# Start it by hand (Actions > desktop updater proof, or gh workflow run desktop-updater-proof.yml).
 name: desktop updater proof
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['feat/desktop-updater']
-    paths:
-      - 'desktop/**'
-      - '.github/workflows/desktop-updater-proof.yml'
-      - '.github/scripts/updater-*.cjs'
 
 permissions:
   contents: write # creates, then deletes, the test prereleases
