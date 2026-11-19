@@ -350,12 +350,12 @@ app.on("activate", () => {
 });
 
 void app.whenReady().then(async () => {
-  // Updates (publik-updater.cjs, docs/updates.md): publik's signed feed for chatmany-mann, checked at
+  // Updates (publik-updater.cjs, docs/updates.md): publik's signed feed for chatmany, checked at
   // launch, every 24 hours and from "Check for Updates…"; the download runs in the background, then
   // the app asks to restart. A test build started with PUBLIK_UPDATER_TEST runs the CI update proof and
   // exits: nothing below starts (no window, no publik, no Instagram). The smoke test checks no updates:
   // it may talk only to its fake publik.
-  const updates = smoke ? null : startUpdates({ slug: "chatmany-mann", appName: "chatmany", menu: false });
+  const updates = smoke ? null : startUpdates({ slug: "chatmany", appName: "chatmany", menu: false });
   if (updates?.testHook) {
     updaterTestRun = true;
     return;

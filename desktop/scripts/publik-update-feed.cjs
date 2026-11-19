@@ -4,7 +4,7 @@
 //   write    latest.yml (Windows) and/or latest-mac.yml (macOS) for files on disk, with ABSOLUTE
 //            download URLs (the GitHub release assets). --mac-zip and --mac-dmg may repeat, one per
 //            architecture (arm64, x64): electron-updater picks the file for the Mac it runs on.
-//              node scripts/publik-update-feed.cjs write --app chatmany-mann --version 0.1.2 \
+//              node scripts/publik-update-feed.cjs write --app chatmany --version 0.1.2 \
 //                --download-base https://github.com/OWNER/REPO/releases/download/desktop-v0.1.2/ \
 //                --win release/chatmany-0.1.2-windows-x64-setup.exe \
 //                --mac-zip release/chatmany-0.1.2-mac-arm64.zip --mac-zip release/chatmany-0.1.2-mac-x64.zip \
@@ -19,7 +19,7 @@
 //            every feed file that is missing (all of them with --force) from the installer files on the
 //            release, signs it, verifies it and uploads it. Uses the gh CLI. The version is the tag
 //            without "desktop-v" (or "v"); give --version when the tag says more (desktop-v0.1.2-rc1).
-//              node scripts/publik-update-feed.cjs release --tag desktop-v0.1.2 --app chatmany-mann [--repo OWNER/REPO] [--version 0.1.2] [--force]
+//              node scripts/publik-update-feed.cjs release --tag desktop-v0.1.2 --app chatmany [--repo OWNER/REPO] [--version 0.1.2] [--force]
 //
 // A feed file is what electron-updater reads (version, files[] with url + sha512 + size, path, sha512,
 // releaseDate), plus `publikApp: <slug>`: the app refuses a feed made for another app.

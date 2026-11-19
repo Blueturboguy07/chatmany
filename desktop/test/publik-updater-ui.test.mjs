@@ -1,5 +1,5 @@
 // The parts of publik-updater.cjs that run inside Electron, as chatmany starts them (src/main/main.ts:
-// startUpdates({ slug: "chatmany-mann", appName: "chatmany", menu: false }), then the app's own menu holds
+// startUpdates({ slug: "chatmany", appName: "chatmany", menu: false }), then the app's own menu holds
 // updates.menuItem()): the check at launch, the check every 24 hours, "Check for Updates…" and the restart
 // question. electron and electron-updater's autoUpdater are fakes here (Module._load), and vitest's fake
 // timers stand in for setInterval and setTimeout. The live proof (.github/workflows/live-update-proof.yml)
@@ -81,8 +81,8 @@ function on(platform, f, { updates } = {}) {
 }
 const settle = () => new Promise((r) => setImmediate(r));
 /** As src/main/main.ts starts the updater: chatmany builds its own menu with updates.menuItem(). */
-const start = () => startUpdates({ slug: 'chatmany-mann', appName: 'chatmany', menu: false });
-const notFound = () => Object.assign(new Error('Cannot get latest.yml from the update feed: Cannot download "https://publikhq.com/api/updates/chatmany-mann/latest.yml?noCache=1", status 404: Not Found'), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' });
+const start = () => startUpdates({ slug: 'chatmany', appName: 'chatmany', menu: false });
+const notFound = () => Object.assign(new Error('Cannot get latest.yml from the update feed: Cannot download "https://publikhq.com/api/updates/chatmany/latest.yml?noCache=1", status 404: Not Found'), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' });
 
 for (const platform of ['darwin', 'win32']) {
   test(`${platform}: the app checks at launch, then every 24 hours, silently`, () => {
@@ -90,8 +90,8 @@ for (const platform of ['darwin', 'win32']) {
     on(platform, f);
     const u = start();
     assert.equal(u.testHook, false);
-    assert.equal(f.updater.feed.url, 'https://publikhq.com/api/updates/chatmany-mann/');
-    assert.equal(f.updater.feed.slug, 'chatmany-mann');
+    assert.equal(f.updater.feed.url, 'https://publikhq.com/api/updates/chatmany/');
+    assert.equal(f.updater.feed.slug, 'chatmany');
     assert.equal(f.menu, null, 'menu: false: publik-updater.cjs leaves the menu to the app');
     assert.equal(f.updater.checks, 1, 'one check at launch');
     f.updater.emit('update-not-available', { version: '0.1.2' });

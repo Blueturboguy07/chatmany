@@ -39,7 +39,7 @@ set +x
 umask 022
 
 APP=chatmany
-SLUG=chatmany-mann
+SLUG=chatmany
 REPO=Blueturboguy07/chatmany
 BRANCH=desktop-app
 BUNDLE_ID=com.publikhq.chatmany

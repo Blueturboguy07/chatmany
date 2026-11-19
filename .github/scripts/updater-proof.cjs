@@ -296,10 +296,10 @@ function checkBuild(o) {
   const checks = [
     ['node_modules/electron-updater is packed', a.has('node_modules/electron-updater/package.json')],
     ['node_modules/blakejs is packed', a.has('node_modules/blakejs/package.json')],
-    ['main.cjs holds the signed-feed provider and the slug chatmany-mann', main.includes('PublikSignedFeedProvider') && main.includes('"chatmany-mann"')],
+    ['main.cjs holds the signed-feed provider and the slug chatmany', main.includes('PublikSignedFeedProvider') && main.includes('"chatmany"')],
     [`package.json: version ${o.version}, publikUpdaterTest true`, pkg.version === o.version && pkg.publikUpdaterTest === true],
     ['package.json: no publik app token (this build cannot sign in)', !(typeof (pkg.publik || {}).appToken === 'string' && pkg.publik.appToken.trim())],
-    ['app-update.yml: the publik feed of chatmany-mann', /url: https:\/\/publikhq\.com\/api\/updates\/chatmany-mann\/?\s*$/m.test(updateYml)],
+    ['app-update.yml: the publik feed of chatmany', /url: https:\/\/publikhq\.com\/api\/updates\/chatmany\/?\s*$/m.test(updateYml)],
   ];
   for (const [name, pass] of checks) log(`${pass ? 'PASS' : 'FAIL'} ${name}`);
   log(`app-update.yml:\n${updateYml.trim()}`);

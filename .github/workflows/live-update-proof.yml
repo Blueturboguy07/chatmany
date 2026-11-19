@@ -2,9 +2,9 @@
 # on real runners. For each OS chatmany ships (macOS Apple silicon: the arm64 dmg; macOS Intel: the x64 dmg;
 # Windows x64: the setup exe), the job downloads the published release `from_tag` from GitHub, installs it as
 # a user does, starts it the normal way (release build: no test hook, no feed override, nobody signs in) and
-# lets it ask https://publikhq.com/api/updates/chatmany-mann/. Then (.github/scripts/live-update-proof.cjs):
+# lets it ask https://publikhq.com/api/updates/chatmany/. Then (.github/scripts/live-update-proof.cjs):
 #   expect_version = the from version: the app must find no update and stay as it is. The live feed may
-#     answer 404 (publik serves no release of chatmany-mann yet: the release waits for the owner's approval):
+#     answer 404 (publik serves no release of chatmany yet: the release waits for the owner's approval):
 #     the app reads that as "no update" and shows nothing; the proof accepts it and says so in its log.
 #   expect_version = a newer version: the live feed must serve it; the app must download it, ask
 #     "Restart now?", and after the answer ("restart": Restart Now; "later": Later, then the user quits and

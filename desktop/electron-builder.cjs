@@ -18,7 +18,7 @@
  * without it still builds; the app then shows "cannot sign in".
  *
  * Updates (publik-updater.cjs, docs/updates.md): `publish` is publik's signed
- * update feed for the listing chatmany-mann. With `--publish never` nothing is
+ * update feed for the listing chatmany. With `--publish never` nothing is
  * uploaded; electron-builder writes resources/app-update.yml into the app, and
  * its own unsigned latest*.yml and .blockmap files into release/. Those are NOT
  * the feed: never put them on a release (scripts/publik-update-feed.cjs makes it).
@@ -33,7 +33,7 @@ module.exports = {
   appId: "com.publikhq.chatmany",
   productName: "chatmany",
   copyright: "Copyright © publik",
-  publish: { provider: "generic", url: "https://publikhq.com/api/updates/chatmany-mann/" },
+  publish: { provider: "generic", url: "https://publikhq.com/api/updates/chatmany/" },
   files: ["dist/renderer/**", "dist-electron/**", "!**/*.map"],
   extraMetadata: {
     main: "dist-electron/main.cjs",

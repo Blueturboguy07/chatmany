@@ -8,13 +8,13 @@ app's only runtime dependencies (`package.json` › `dependencies`), packed into
 
 ## How it works
 
-1. The app asks `https://publikhq.com/api/updates/chatmany-mann/` for two files: `latest.yml` (Windows) or
+1. The app asks `https://publikhq.com/api/updates/chatmany/` for two files: `latest.yml` (Windows) or
    `latest-mac.yml` (macOS), and the signature of that file (`latest.yml.sig` or `latest-mac.yml.sig`).
    It asks at launch, every 24 hours and when you click **Check for Updates…** (macOS: the chatmany menu;
    Windows: Help, which shows when you press Alt).
 2. The app verifies the signature with the publik update public key, which is in `publik-update-verify.cjs`.
    If the signature is missing or wrong, the app stops there. It downloads nothing.
-3. The feed must name this app (`publikApp: chatmany-mann`) and give a sha512 for each file.
+3. The feed must name this app (`publikApp: chatmany`) and give a sha512 for each file.
 4. electron-updater downloads the file that the feed names, in the background. It refuses the file if its
    sha512 is not the one in the signed feed. Windows downloads the NSIS installer. macOS downloads the zip
    of its own architecture (Apple silicon: `-mac-arm64.zip`; Intel: `-mac-x64.zip`), and Squirrel.Mac also
@@ -32,10 +32,10 @@ mode (`--smoke-test`) starts no updater at all: it may talk only to its fake pub
 
 | Request | Response |
 |---|---|
-| `GET /api/updates/chatmany-mann/latest.yml` | the release asset `latest.yml`, byte for byte |
-| `GET /api/updates/chatmany-mann/latest.yml.sig` | the release asset `latest.yml.sig`, byte for byte |
-| `GET /api/updates/chatmany-mann/latest-mac.yml` | the release asset `latest-mac.yml`, byte for byte |
-| `GET /api/updates/chatmany-mann/latest-mac.yml.sig` | the release asset `latest-mac.yml.sig`, byte for byte |
+| `GET /api/updates/chatmany/latest.yml` | the release asset `latest.yml`, byte for byte |
+| `GET /api/updates/chatmany/latest.yml.sig` | the release asset `latest.yml.sig`, byte for byte |
+| `GET /api/updates/chatmany/latest-mac.yml` | the release asset `latest-mac.yml`, byte for byte |
+| `GET /api/updates/chatmany/latest-mac.yml.sig` | the release asset `latest-mac.yml.sig`, byte for byte |
 
 - Serve the files from the scan-approved release without changes. One changed byte breaks the signature.
 - The app adds `?noCache=<random>` to each request. Ignore the query string.
@@ -47,7 +47,7 @@ A mac feed file looks like this (`scripts/publik-update-feed.cjs` makes it; the 
 
 ```yaml
 version: '0.1.2'
-publikApp: 'chatmany-mann'
+publikApp: 'chatmany'
 files:
   - url: 'https://github.com/Blueturboguy07/chatmany/releases/download/desktop-v0.1.2/chatmany-0.1.2-mac-arm64.zip'
     sha512: '<base64>'
@@ -140,7 +140,7 @@ and Windows runners. It builds two test versions, N and N+1, with `"publikUpdate
 
 | Variable | Effect (test builds only) |
 |---|---|
-| `PUBLIK_UPDATE_URL` | replaces `https://publikhq.com/api/updates/chatmany-mann/` |
+| `PUBLIK_UPDATE_URL` | replaces `https://publikhq.com/api/updates/chatmany/` |
 | `PUBLIK_UPDATER_TEST=report` | writes the running version to `PUBLIK_UPDATER_RESULT` and exits |
 | `PUBLIK_UPDATER_TEST=update` | runs the same check, download and install, writes the result, quits to install |
 

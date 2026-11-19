@@ -4,10 +4,10 @@
 #   latest-mac.yml   + latest-mac.yml.sig   macOS: the zips (Squirrel.Mac installs from them) and the dmgs,
 #                                           arm64 and x64; each Mac takes the files of its architecture
 # The feed files carry ABSOLUTE asset URLs (https://github.com/<repo>/releases/download/<tag>/<file>), the
-# sha512 of each file and `publikApp: chatmany-mann`. The .sig files are minisign signatures made with the
+# sha512 of each file and `publikApp: chatmany`. The .sig files are minisign signatures made with the
 # publik update key (repo secrets PUBLIK_UPDATE_KEY and PUBLIK_UPDATE_KEY_PASSWORD); each one is verified
 # against the public key in desktop/publik-update-verify.cjs before upload. publik serves these four files
-# at https://publikhq.com/api/updates/chatmany-mann/ from the scan-approved release.
+# at https://publikhq.com/api/updates/chatmany/ from the scan-approved release.
 #
 # Run it once the release (a draft is fine) holds the installer files. It adds only the feed files that
 # are missing; "force" remakes them (after a file on the release was replaced). It never touches an
@@ -100,5 +100,5 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^desktop-v[0-9A-Za-z.-]+$ ]] || { echo "The tag must look like desktop-v0.1.2."; exit 1; }
-          node scripts/publik-update-feed.cjs release --tag "$TAG" --app chatmany-mann --repo "$GITHUB_REPOSITORY" ${VERSION:+--version "$VERSION"} $FORCE
+          node scripts/publik-update-feed.cjs release --tag "$TAG" --app chatmany --repo "$GITHUB_REPOSITORY" ${VERSION:+--version "$VERSION"} $FORCE
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort

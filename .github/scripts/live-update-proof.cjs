@@ -1,7 +1,7 @@
 // CI only (.github/workflows/live-update-proof.yml). Not part of the app.
 //
 // The live update proof: what a chatmany desktop user does, on a GitHub runner, with the REAL release and
-// the LIVE publik feed (https://publikhq.com/api/updates/chatmany-mann/). No test hook, no feed override, no
+// the LIVE publik feed (https://publikhq.com/api/updates/chatmany/). No test hook, no feed override, no
 // sign-in. (Adapted from the publik updater template's proof, Blueturboguy07/surfcam.)
 //   1. downloads release --from-tag from GitHub (the dmg of this Mac's architecture / the Windows installer,
 //      the files publik's listing links) and checks it against the sha512 in that release's signed feed.
@@ -41,7 +41,7 @@ const { verifyMinisign, PUBLIK_UPDATE_PUBLIC_KEYS } = require('../../desktop/pub
 
 const APP = 'chatmany';
 const BUNDLE_ID = 'com.publikhq.chatmany';
-const SLUG = 'chatmany-mann';
+const SLUG = 'chatmany';
 const FEED_BASE = `https://publikhq.com/api/updates/${SLUG}/`;
 const KEY_ID = 'F5E0515C77912BD0';
 const CACHE_DIR = 'chatmany-desktop-updater'; // updaterCacheDirName in the app's app-update.yml

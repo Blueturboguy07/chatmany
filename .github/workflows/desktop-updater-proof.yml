@@ -187,7 +187,7 @@ jobs:
           PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany-mann --repo "$GITHUB_REPOSITORY"
+          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany --repo "$GITHUB_REPOSITORY"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.yml --pattern latest.yml.sig --dir feed-good
           node scripts/publik-update-feed.cjs verify feed-good/latest.yml
           cat feed-good/latest.yml
@@ -377,7 +377,7 @@ jobs:
           PUBLIK_UPDATE_KEY_PASSWORD: ${{ secrets.PUBLIK_UPDATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany-mann --repo "$GITHUB_REPOSITORY"
+          node scripts/publik-update-feed.cjs release --tag "$TAG" --version "$V_NEW" --app chatmany --repo "$GITHUB_REPOSITORY"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest-mac.yml --pattern latest-mac.yml.sig --dir feed-good
           node scripts/publik-update-feed.cjs verify feed-good/latest-mac.yml
           cat feed-good/latest-mac.yml
@@ -404,7 +404,7 @@ jobs:
           otherzip="assets/chatmany-$V_NEW-mac-$ARCH-otheridentity.zip"
           ditto -c -k --sequesterRsrc --keepParent other/chatmany.app "$otherzip"
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "assets/$onebyte" "$otherzip"
-          node scripts/publik-update-feed.cjs write --app chatmany-mann --version "$V_NEW" --download-base "$base" --mac-zip "$otherzip" --out feed-otherid
+          node scripts/publik-update-feed.cjs write --app chatmany --version "$V_NEW" --download-base "$base" --mac-zip "$otherzip" --out feed-otherid
           node ../.github/scripts/updater-proof.cjs prepare --good feed-good --feed latest-mac.yml --onebyte-of "$zipname" --onebyte-url "$base$onebyte" --other-identity feed-otherid --out cases
 
       - name: Proof (N refuses the bad feeds, then updates to N+1)
