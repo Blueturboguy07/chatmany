@@ -19,7 +19,7 @@ import type { GateView } from "../shared/bridge";
 import { OFFLINE_TEXT, UNREACHABLE_TEXT } from "../shared/messages";
 
 export const APP_SLUG = "chatmany";
-export const APP_VERSION = "0.1.3";
+export const APP_VERSION = "0.1.4";
 /** chatmany calls no model: it signs in and counts users, and has no plan screen. */
 export const USES_AI = false;
 export const PUBLIK_ORIGIN = "https://publikhq.com";

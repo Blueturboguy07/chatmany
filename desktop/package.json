@@ -1,7 +1,7 @@
 {
   "name": "chatmany-desktop",
   "productName": "chatmany",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "chatmany on your computer: comment-to-DM automations for Instagram. The automations run in the cloud on publik.",
   "license": "MIT",
   "private": true,
